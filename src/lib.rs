@@ -1,6 +1,7 @@
 #![feature(macro_rules)]
 
-use std::io::{MemReader, MemWriter, Timer, TcpStream};
+use std::io::{IoResult, MemReader, MemWriter, Timer, TcpStream};
+use std::io::net::ip::SocketAddr;
 use std::num::FromPrimitive;
 use std::sync::{Arc, Barrier};
 use std::sync::atomic::{AtomicBool, AtomicInt, AtomicOption, SeqCst};
@@ -343,19 +344,9 @@ pub struct Zookeeper {
 
 impl Zookeeper {
 
-    pub fn new<W: Watcher>(host: &str, port: u16, timeout: Duration, watcher: W) -> Result<Zookeeper, &'static str> {
-        let conn = TcpStream::connect(host, port);
-        if conn.is_err() {
-            return Err(conn.err().unwrap().desc)
-        }
-        
-        let mut sock = conn.unwrap();
+    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<Zookeeper, &'static str> {
 
-        write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
-
-        let conn_resp = ConnectResponse::read_from(&mut sock);
-
-        println!("{}", conn_resp);
+        let sock = Zookeeper::connect(connect_string, timeout).unwrap();
 
         // comminucating requests (as Packets) from instance methods to writer thread
         let (packet_tx, packet_rx): (Sender<Arc<Packet>>, Receiver<Arc<Packet>>) = channel();
@@ -384,7 +375,7 @@ impl Zookeeper {
             println!("writer thread started");
 
             let mut timer = Timer::new().unwrap();
-            let ping_timeout = timer.periodic(Duration::milliseconds(conn_resp.timeout as i64));
+            let ping_timeout = timer.periodic(timeout);
 
             while writing.load(SeqCst) {
 
@@ -438,6 +429,30 @@ impl Zookeeper {
         });
 
         Ok(Zookeeper{sock: sock, xid: AtomicInt::new(1), packet_tx: packet_tx})
+    }
+
+    fn connect(connect_string: &str, timeout: Duration) -> IoResult<TcpStream> {
+
+        let hosts: Vec<SocketAddr> = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
+
+        loop {
+            for host in hosts.iter() {
+                println!("Connecting to {}...", host);
+                let mut sock = TcpStream::connect_timeout(*host, timeout);
+                if sock.is_err() {
+                    println!("Connection timeout {}", host);
+                    continue;
+                }
+
+                write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
+
+                let conn_resp = ConnectResponse::read_from(&mut sock);
+
+                println!("{}", conn_resp);
+
+                return sock
+            }
+        }
     }
 
     fn xid(&self) -> i32 {
@@ -504,7 +519,7 @@ fn it_works() {
         }
     }
 
-    match Zookeeper::new("127.0.0.1", 2181, Duration::seconds(5), LoggingWatcher) {
+    match Zookeeper::new("127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
         Ok(mut zk) => {
             let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::All, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
