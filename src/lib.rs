@@ -115,7 +115,7 @@ impl ReplyHeader {
 }
 
 #[deriving(FromPrimitive, Show)]
-enum Error {
+pub enum ZkError {
     APIError = -100,
     AuthFailed = -115,
     BadArguments = -8,
@@ -137,14 +137,14 @@ enum Error {
     Unimplemented = -6
 }
 
-pub type ZkResult<T> = Result<T, Error>;
+pub type ZkResult<T> = Result<T, ZkError>;
 
 #[deriving(Show)]
 enum Response {
     GetChildrenResult(GetChildrenResponse),
     CreateResult(CreateResponse),
     CloseResult,
-    ErrorResult(Error)
+    ErrorResult(ZkError)
 }
 
 #[deriving(Show)]
