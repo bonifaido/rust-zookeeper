@@ -519,7 +519,7 @@ fn it_works() {
         }
     }
 
-    match Zookeeper::new("127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
+    match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
         Ok(mut zk) => {
             let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::All, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
