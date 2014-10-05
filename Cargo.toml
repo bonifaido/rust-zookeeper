@@ -1,0 +1,5 @@
+[package]
+
+name = "rust-zk"
+version = "0.0.1"
+authors = ["Nandor Kracser <bonifaido@gmail.com>"]
