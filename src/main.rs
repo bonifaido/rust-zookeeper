@@ -386,9 +386,7 @@ impl Zookeeper {
                 let (reply_header, mut reader) = Zookeeper::read_reply(&mut reader_sock).unwrap(); // TODO error
                 match reply_header.xid {
                     -2 => println!("Got ping event"),
-                    -1 => {
-                        event_tx.send(WatchedEvent::read_from(&mut reader));
-                    },
+                    -1 => event_tx.send(WatchedEvent::read_from(&mut reader)),
                    xid => {
                         println!("Got response, gotta find last pending request for xid {}", xid);
                         let packet = written_rx.recv();
@@ -418,7 +416,7 @@ impl Zookeeper {
             Ok(buf) => {
                 let mut reader = MemReader::new(buf);
                 Ok((ReplyHeader::read_from(&mut reader), reader))
-            }
+            },
             Err(e) => Err(e)
         }
     }
