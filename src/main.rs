@@ -510,8 +510,9 @@ pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
 }
 
-#[test]
-fn it_works() {
+
+
+fn main() {
     struct LoggingWatcher;
     impl Watcher for LoggingWatcher {
         fn handle(&self, e: &WatchedEvent) {
