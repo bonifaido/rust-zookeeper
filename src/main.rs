@@ -78,7 +78,7 @@ impl ConnectResponse {
         let protocol_version = reader.read_be_i32().unwrap();
         let timeout = reader.read_be_i32().unwrap();
         let session_id = reader.read_be_i64().unwrap();
-        let passwd = read_buffer(reader);
+        let passwd = read_buffer(reader).unwrap();
         let read_only = reader.read_u8().unwrap() == 0;
         ConnectResponse{len:len, protocol_version:protocol_version, timeout:timeout, session_id:session_id, passwd:passwd, read_only:read_only}
     }
@@ -99,7 +99,6 @@ impl Archive for RequestHeader {
 
 #[deriving(Show)]
 struct ReplyHeader {
-    len: i32,
     xid: i32,
     zxid: i64,
     err: i32
@@ -107,11 +106,10 @@ struct ReplyHeader {
 
 impl ReplyHeader {
     fn read_from(reader: &mut Reader) -> ReplyHeader {
-        let len = reader.read_be_i32().unwrap();
         let xid = reader.read_be_i32().unwrap();
         let zxid = reader.read_be_i64().unwrap();
         let err = reader.read_be_i32().unwrap();
-        ReplyHeader{len: len, xid: xid, zxid: zxid, err: err}
+        ReplyHeader{xid: xid, zxid: zxid, err: err}
     }
 }
 
@@ -217,14 +215,16 @@ impl Archive for EmptyRequest {
 }
 
 #[allow(unused_must_use)]
-fn write_buffer(writer: &mut Writer, buffer: &Vec<u8>) {
+fn write_buffer(writer: &mut Writer, buffer: &Vec<u8>) -> IoResult<()> {
     writer.write_be_i32(buffer.len() as i32);
-    writer.write(buffer.as_slice());
+    return writer.write(buffer.as_slice());
 }
 
-fn read_buffer(reader: &mut Reader) -> Vec<u8> {
-    let len = reader.read_be_i32().unwrap();
-    reader.read_exact(len as uint).unwrap()
+fn read_buffer(reader: &mut Reader) -> IoResult<Vec<u8>> {
+    match reader.read_be_i32() {
+        Ok(len) => reader.read_exact(len as uint),
+        Err(err) => Err(err)
+    }
 }
 
 #[allow(unused_must_use)]
@@ -234,28 +234,8 @@ fn write_string(writer: &mut Writer, string: &String) {
 }
 
 fn read_string(reader: &mut Reader) -> String {
-    let raw = read_buffer(reader);
+    let raw = read_buffer(reader).unwrap();
     String::from_utf8(raw).unwrap()
-} 
-
-fn copy(reader: &mut Reader, len: uint) -> Result<MemReader, String> {
-    let mut buf = Vec::<u8>::with_capacity(len);
-    if len == 0 {
-        return Ok(MemReader::new(buf))
-    }
-    match reader.push(len, &mut buf) {
-        Ok(read) => {
-            if read == len {
-                Ok(MemReader::new(buf))
-            } else {
-                Err("Couldn't read enough bytes".to_string())
-            }
-        },
-        Err(err) => {
-            println!("{}", err);
-            Err(err.desc.to_string())
-        }
-    }
 }
 
 struct Packet {
@@ -362,6 +342,7 @@ impl Zookeeper {
         let eventing = reading.clone();
 
         spawn(proc() {
+            println!("event thread started");
             while eventing.load(SeqCst) {
                 let event = event_rx.recv();
                 watcher.handle(&event);
@@ -376,18 +357,23 @@ impl Zookeeper {
             let ping_timeout = timer.periodic(timeout);
 
             while writing.load(SeqCst) {
-
                 // do we have something to send or do we need to ping?
                 select! {
                     packet = packet_rx.recv() => {
-                        println!("writer thread sending {}", packet.opcode);
-                        write_buffer(&mut writer_sock, &packet.data);
-                        written_tx.send(packet);
+                        let res = write_buffer(&mut writer_sock, &packet.data);
+                        if res.is_err() {
+                            println!("Failed to send request to server")
+                        } else {
+                            written_tx.send(packet);
+                        }
                     },
                     () = ping_timeout.recv() => {
                         println!("Sending Ping to server");
                         let ping = RequestHeader{xid: -2, opcode: Ping as i32}.to_byte_vec();
-                        write_buffer(&mut writer_sock, &ping);
+                        let res = write_buffer(&mut writer_sock, &ping);
+                        if res.is_err() {
+                            println!("Failed to ping server");
+                        }
                     }
                 };
             }
@@ -397,13 +383,11 @@ impl Zookeeper {
             println!("reader thread started");
 
             while reading.load(SeqCst) {
-                let reply_header = ReplyHeader::read_from(&mut reader_sock);
-                let mut reader = copy(&mut reader_sock, reply_header.len as uint - 16).unwrap(); // TODO
+                let (reply_header, mut reader) = Zookeeper::read_reply(&mut reader_sock).unwrap(); // TODO error
                 match reply_header.xid {
                     -2 => println!("Got ping event"),
                     -1 => {
-                        let event = WatchedEvent::read_from(&mut reader);
-                        event_tx.send(event);
+                        event_tx.send(WatchedEvent::read_from(&mut reader));
                     },
                    xid => {
                         println!("Got response, gotta find last pending request for xid {}", xid);
@@ -429,6 +413,16 @@ impl Zookeeper {
         Ok(Zookeeper{sock: sock, xid: AtomicInt::new(1), packet_tx: packet_tx})
     }
 
+    fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
+        match read_buffer(sock) {
+            Ok(buf) => {
+                let mut reader = MemReader::new(buf);
+                Ok((ReplyHeader::read_from(&mut reader), reader))
+            }
+            Err(e) => Err(e)
+        }
+    }
+
     fn connect(connect_string: &str, timeout: Duration) -> IoResult<TcpStream> {
 
         let hosts: Vec<SocketAddr> = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
@@ -442,7 +436,7 @@ impl Zookeeper {
                     continue;
                 }
 
-                write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
+                write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec()); // TODO error
 
                 let conn_resp = ConnectResponse::read_from(&mut sock);
 
@@ -467,6 +461,8 @@ impl Zookeeper {
 
         let barrier = Barrier::new(2);
         let packet = Arc::new(Packet{data: buf.unwrap(), done: barrier, opcode: opcode, response: AtomicOption::empty()});
+
+        println!("writer thread sending {}", packet.opcode);
 
         self.packet_tx.send(packet.clone());
 
