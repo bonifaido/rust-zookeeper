@@ -203,12 +203,10 @@ impl GetChildrenResponse {
     fn read_from(reader: &mut Reader) -> GetChildrenResponse {
         let len = reader.read_be_i32().unwrap();
         let mut children = Vec::new();
-        if len > 0 {
-            for _ in range(0, len) {
-                children.push(read_string(reader));
-            }
+        for _ in range(0, len) {
+            children.push(read_string(reader));
         }
-        GetChildrenResponse{children: children} // copied - box?
+        GetChildrenResponse{children: children}
     }
 }
 
