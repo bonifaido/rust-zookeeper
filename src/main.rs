@@ -312,7 +312,6 @@ impl WatchedEvent {
 }
 
 pub struct Zookeeper {
-    sock: TcpStream,
     xid: AtomicInt,
     packet_tx: Sender<Packet> // sending Packets from methods to writer thread
 }
@@ -321,8 +320,7 @@ impl Zookeeper {
 
     pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<Zookeeper, &'static str> {
 
-        // comminucating socket to their corresponding tasks
-        let (writer_sock_tx, writer_sock_rx) = sync_channel(1);
+        // comminucating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(1);
         // comminucating requests (as Packets) from instance methods to writer thread
         let (packet_tx, packet_rx): (Sender<Packet>, Receiver<Packet>) = channel();
@@ -335,13 +333,11 @@ impl Zookeeper {
         let writing = reading.clone();
         let eventing = reading.clone();
 
-        let sock = Zookeeper::connect(connect_string, timeout).unwrap();
-
-        writer_sock_tx.send(sock.clone());
-        reader_sock_tx.send(sock.clone());
+        let hosts: Vec<SocketAddr> = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
         spawn(proc() {
             println!("event thread started");
+
             while eventing.load(SeqCst) {
                 let event = event_rx.recv();
                 watcher.handle(&event);
@@ -357,11 +353,13 @@ impl Zookeeper {
 
             loop {
                 println!("connection error: trying to get new writer_sock");
-                let mut writer_sock = writer_sock_rx.recv();
+                let mut writer_sock = Zookeeper::connect(&hosts, timeout).unwrap();
+                reader_sock_tx.send(writer_sock.clone());
+
                 while writing.load(SeqCst) {
                     // do we have something to send or do we need to ping?
                     select! {
-                        packet = packet_rx.recv() => {
+                        packet = packet_rx.recv() => { // TODO return in case of recv_opt() -> Err
                             let res = write_buffer(&mut writer_sock, &packet.data);
                             if res.is_err() {
                                 break;
@@ -400,7 +398,7 @@ impl Zookeeper {
                         -1 => event_tx.send(WatchedEvent::read_from(&mut reader)),
                        xid => {
                             println!("Got response, gotta find last pending request for xid {}", xid);
-                            let packet = written_rx.recv();
+                            let packet = written_rx.recv(); // TODO return in case of recv_opt() -> Err, close socket
                             let result = match reply_header.err { // TODO refactor this match to a fn
                                 0 => match packet.opcode {
                                     Create => CreateResult(CreateResponse::read_from(&mut reader)),
@@ -419,7 +417,7 @@ impl Zookeeper {
             }
         });
 
-        Ok(Zookeeper{sock: sock, xid: AtomicInt::new(1), packet_tx: packet_tx})
+        Ok(Zookeeper{xid: AtomicInt::new(1), packet_tx: packet_tx})
     }
 
     fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
@@ -428,10 +426,7 @@ impl Zookeeper {
         Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 
-    fn connect(connect_string: &str, timeout: Duration) -> IoResult<TcpStream> {
-
-        let hosts: Vec<SocketAddr> = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
-
+    fn connect(hosts: &Vec<SocketAddr>, timeout: Duration) -> IoResult<TcpStream> {
         loop {
             for host in hosts.iter() {
                 println!("Connecting to {}...", host);
@@ -502,8 +497,6 @@ impl Zookeeper {
     #[allow(unused_must_use)]
     pub fn close(&mut self) {
         self.request(EmptyRequest, 0, CloseSession);
-        self.sock.close_write();
-        self.sock.close_read();
     }
 }
 
