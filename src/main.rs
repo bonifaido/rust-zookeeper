@@ -3,8 +3,8 @@
 use std::io::{IoResult, MemReader, MemWriter, Timer, TcpStream};
 use std::io::net::ip::SocketAddr;
 use std::num::FromPrimitive;
-use std::sync::{Arc, Barrier};
-use std::sync::atomic::{AtomicBool, AtomicInt, AtomicOption, SeqCst};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
 use std::time::Duration;
 
 macro_rules! fetch_result (
@@ -239,10 +239,9 @@ fn read_string(reader: &mut Reader) -> String {
 }
 
 struct Packet {
-    done: Barrier,
-    data: Vec<u8>,
     opcode: OpCode,
-    response: AtomicOption<Response>
+    data: Vec<u8>,
+    response: Sender<Response>
 }
 
 mod perms {
@@ -317,7 +316,7 @@ impl WatchedEvent {
 pub struct Zookeeper {
     sock: TcpStream,
     xid: AtomicInt,
-    packet_tx: Sender<Arc<Packet>> // sending Packets from methods to writer thread
+    packet_tx: Sender<Packet> // sending Packets from methods to writer thread
 }
 
 impl Zookeeper {
@@ -327,7 +326,7 @@ impl Zookeeper {
         let sock = Zookeeper::connect(connect_string, timeout).unwrap();
 
         // comminucating requests (as Packets) from instance methods to writer thread
-        let (packet_tx, packet_rx): (Sender<Arc<Packet>>, Receiver<Arc<Packet>>) = channel();
+        let (packet_tx, packet_rx): (Sender<Packet>, Receiver<Packet>) = channel();
         // communicating sent Packets from writer thread to the reader thread
         let (written_tx, written_rx) = channel();
         // event channel for passing WatchedEvents to watcher on a seperate thread
@@ -401,8 +400,7 @@ impl Zookeeper {
                                 ErrorResult(FromPrimitive::from_i32(error).unwrap())
                             }
                         };
-                        packet.response.fill(box result, SeqCst);
-                        packet.done.wait();
+                        packet.response.send(result);
                      }
                 }
             }
@@ -457,17 +455,15 @@ impl Zookeeper {
         rh.write_into(&mut buf);
         req.write_into(&mut buf);
 
-        let barrier = Barrier::new(2);
-        let packet = Arc::new(Packet{data: buf.unwrap(), done: barrier, opcode: opcode, response: AtomicOption::empty()});
+        let (resp_tx, resp_rx) = channel();
+        let packet = Packet{opcode: opcode, data: buf.unwrap(), response: resp_tx};
 
         println!("writer thread sending {}", packet.opcode);
 
-        self.packet_tx.send(packet.clone());
+        self.packet_tx.send(packet);
 
-        println!("barrier.wait()");
-        packet.done.wait();
-        println!("barrier.wait() done");
-        *packet.response.take(SeqCst).unwrap()
+        println!("waiting for response");
+        resp_rx.recv()
     }
 
     pub fn get_children(&mut self, path: String, watch: bool) -> ZkResult<Vec<String>> {
