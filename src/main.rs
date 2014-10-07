@@ -313,15 +313,16 @@ impl WatchedEvent {
 
 pub struct Zookeeper {
     xid: AtomicInt,
+    running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer thread
 }
 
 impl Zookeeper {
 
-    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<Zookeeper, &'static str> {
+    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<Zookeeper, &str> {
 
         // comminucating reader socket from writer to reader task
-        let (reader_sock_tx, reader_sock_rx) = sync_channel(1);
+        let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
         // comminucating requests (as Packets) from instance methods to writer thread
         let (packet_tx, packet_rx): (Sender<Packet>, Receiver<Packet>) = channel();
         // communicating sent Packets from writer thread to the reader thread
@@ -329,16 +330,15 @@ impl Zookeeper {
         // event channel for passing WatchedEvents to watcher on a seperate thread
         let (event_tx, event_rx) = channel();
 
-        let reading = Arc::new(AtomicBool::new(true));
-        let writing = reading.clone();
-        let eventing = reading.clone();
+        let running = Arc::new(AtomicBool::new(true));
+        let running1 = running.clone();
 
-        let hosts: Vec<SocketAddr> = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
+        let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
         spawn(proc() {
             println!("event thread started");
 
-            while eventing.load(SeqCst) {
+            loop {
                 let event = event_rx.recv();
                 watcher.handle(&event);
             }
@@ -353,10 +353,13 @@ impl Zookeeper {
 
             loop {
                 println!("connection error: trying to get new writer_sock");
-                let mut writer_sock = Zookeeper::connect(&hosts, timeout).unwrap();
+                let mut writer_sock = match running.load(SeqCst) {
+                    true => Zookeeper::connect(&hosts, timeout).unwrap(),
+                    false => return
+                };
                 reader_sock_tx.send(writer_sock.clone());
 
-                while writing.load(SeqCst) {
+                loop {
                     // do we have something to send or do we need to ping?
                     select! {
                         packet = packet_rx.recv() => { // TODO return in case of recv_opt() -> Err
@@ -387,9 +390,10 @@ impl Zookeeper {
                 println!("connection error: trying to get new reader_sock");
                 let mut reader_sock = reader_sock_rx.recv();
 
-                while reading.load(SeqCst) {
+                loop {
                     let reply = Zookeeper::read_reply(&mut reader_sock);
                     if reply.is_err() {
+                        println!("Zookeeper::read_reply {}", reply.err());
                         break;
                     }
                     let (reply_header, mut reader) = reply.unwrap();
@@ -403,7 +407,7 @@ impl Zookeeper {
                                 0 => match packet.opcode {
                                     Create => CreateResult(CreateResponse::read_from(&mut reader)),
                                     GetChildren => GetChildrenResult(GetChildrenResponse::read_from(&mut reader)),
-                                    CloseSession => { reading.store(false, SeqCst); CloseResult },
+                                    CloseSession => { CloseResult },
                                     opcode => fail!("{}Response not implemented yet", opcode)
                                 },
                                 error => {
@@ -417,7 +421,7 @@ impl Zookeeper {
             }
         });
 
-        Ok(Zookeeper{xid: AtomicInt::new(1), packet_tx: packet_tx})
+        Ok(Zookeeper{xid: AtomicInt::new(1), running: running1, packet_tx: packet_tx})
     }
 
     fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
@@ -497,6 +501,7 @@ impl Zookeeper {
     #[allow(unused_must_use)]
     pub fn close(&mut self) {
         self.request(EmptyRequest, 0, CloseSession);
+        self.running.store(false, SeqCst);
     }
 }
 
@@ -527,6 +532,9 @@ fn main() {
             std::io::stdin().read_line();
 
             zk.close();
+
+            println!("press enter to exit");
+            std::io::stdin().read_line();
         },
         Err(error) => {
             println!("Error connecting to Zookeeper: {}", error)
