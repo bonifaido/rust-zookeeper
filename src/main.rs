@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
 use std::time::Duration;
 
-macro_rules! fetch_result (
+macro_rules! fetch_result(
     ($res:ident, $enu:ident($item:ident)) => (
         match $res {
             $enu(response) => Ok(response.$item),
@@ -243,12 +243,12 @@ struct Packet {
 }
 
 mod perms {
-    pub static Read: i32 = 1 << 0;
-    pub static Write: i32 = 1 << 1;
-    pub static Create: i32 = 1 << 2;
-    pub static Delete: i32 = 1 << 3;
-    pub static Admin: i32 = 1 << 4;
-    pub static All: i32 = Read | Write | Create | Delete | Admin;
+    pub static READ: i32 = 1 << 0;
+    pub static WRITE: i32 = 1 << 1;
+    pub static CREATE: i32 = 1 << 2;
+    pub static DELETE: i32 = 1 << 3;
+    pub static ADMIN: i32 = 1 << 4;
+    pub static ALL: i32 = READ | WRITE | CREATE | DELETE | ADMIN;
 }
 
 #[deriving(Show)]
@@ -311,8 +311,9 @@ impl WatchedEvent {
     }
 }
 
+#[deriving(Clone)]
 pub struct Zookeeper {
-    xid: AtomicInt,
+    xid: Arc<AtomicInt>,
     running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer thread
 }
@@ -339,8 +340,10 @@ impl Zookeeper {
             println!("event thread started");
 
             loop {
-                let event = event_rx.recv();
-                watcher.handle(&event);
+                match event_rx.recv_opt() {
+                    Ok(event) => watcher.handle(&event),
+                    Err(_) => return
+                }
             }
         });
 
@@ -362,7 +365,11 @@ impl Zookeeper {
                 loop {
                     // do we have something to send or do we need to ping?
                     select! {
-                        packet = packet_rx.recv() => { // TODO return in case of recv_opt() -> Err
+                        res = packet_rx.recv_opt() => {
+                            let packet = match res {
+                                Ok(packet) => packet,
+                                Err(_) => return
+                            };
                             let res = write_buffer(&mut writer_sock, &packet.data);
                             if res.is_err() {
                                 break;
@@ -388,7 +395,10 @@ impl Zookeeper {
 
             loop {
                 println!("connection error: trying to get new reader_sock");
-                let mut reader_sock = reader_sock_rx.recv();
+                let mut reader_sock = match reader_sock_rx.recv_opt() {
+                    Ok(sock) => sock,
+                    Err(_) => return
+                };
 
                 loop {
                     let reply = Zookeeper::read_reply(&mut reader_sock);
@@ -396,24 +406,13 @@ impl Zookeeper {
                         println!("Zookeeper::read_reply {}", reply.err());
                         break;
                     }
-                    let (reply_header, mut reader) = reply.unwrap();
+                    let (reply_header, mut buffer) = reply.unwrap();
                     match reply_header.xid {
                         -2 => println!("Got ping event"),
-                        -1 => event_tx.send(WatchedEvent::read_from(&mut reader)),
-                       xid => {
-                            println!("Got response, gotta find last pending request for xid {}", xid);
-                            let packet = written_rx.recv(); // TODO return in case of recv_opt() -> Err, close socket
-                            let result = match reply_header.err { // TODO refactor this match to a fn
-                                0 => match packet.opcode {
-                                    Create => CreateResult(CreateResponse::read_from(&mut reader)),
-                                    GetChildren => GetChildrenResult(GetChildrenResponse::read_from(&mut reader)),
-                                    CloseSession => { CloseResult },
-                                    opcode => fail!("{}Response not implemented yet", opcode)
-                                },
-                                error => {
-                                    ErrorResult(FromPrimitive::from_i32(error).unwrap())
-                                }
-                            };
+                        -1 => event_tx.send(WatchedEvent::read_from(&mut buffer)),
+                        _xid => {
+                            let packet = written_rx.recv();
+                            let result = Zookeeper::parse_reply(reply_header.err, &packet, &mut buffer);
                             packet.resp_tx.send(result);
                          }
                     }
@@ -421,13 +420,27 @@ impl Zookeeper {
             }
         });
 
-        Ok(Zookeeper{xid: AtomicInt::new(1), running: running1, packet_tx: packet_tx})
+        Ok(Zookeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
     }
 
     fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
         let buf = try!(read_buffer(sock));
         let mut reader = MemReader::new(buf);
         Ok((ReplyHeader::read_from(&mut reader), reader))
+    }
+
+    fn parse_reply(err: i32, packet: &Packet, buf: &mut Reader) -> Response {
+        match err {
+            0 => match packet.opcode {
+                Create => CreateResult(CreateResponse::read_from(buf)),
+                GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
+                CloseSession => { CloseResult },
+                opcode => fail!("{}Response not implemented yet", opcode)
+            },
+            e => {
+                ErrorResult(FromPrimitive::from_i32(e).unwrap())
+            }
+        }
     }
 
     fn connect(hosts: &Vec<SocketAddr>, timeout: Duration) -> IoResult<TcpStream> {
@@ -459,7 +472,7 @@ impl Zookeeper {
         self.xid.fetch_add(1, SeqCst) as i32
     }
 
-    fn request<T: Archive>(&mut self, req: T, xid: i32, opcode: OpCode) -> Response {
+    fn request<T: Archive>(&self, req: T, xid: i32, opcode: OpCode) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = MemWriter::new();
@@ -478,7 +491,7 @@ impl Zookeeper {
         resp_rx.recv()
     }
 
-    pub fn get_children(&mut self, path: String, watch: bool) -> ZkResult<Vec<String>> {
+    pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: path, watch: watch};
 
         let xid = self.xid();
@@ -488,7 +501,7 @@ impl Zookeeper {
         fetch_result!(result, GetChildrenResult(children))
     }
 
-    pub fn create(&mut self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
+    pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: path, data: data, acl: acl, flags: mode as i32};
 
         let xid = self.xid();
@@ -499,7 +512,7 @@ impl Zookeeper {
     }
 
     #[allow(unused_must_use)]
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         self.request(EmptyRequest, 0, CloseSession);
         self.running.store(false, SeqCst);
     }
@@ -508,7 +521,6 @@ impl Zookeeper {
 pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
 }
-
 
 
 fn main() {
@@ -520,8 +532,10 @@ fn main() {
     }
 
     match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
-        Ok(mut zk) => {
-            let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::All, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
+        Ok(zk) => {
+            zk.clone();
+
+            let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
             println!("created path -> {}", path);
 
@@ -532,9 +546,6 @@ fn main() {
             std::io::stdin().read_line();
 
             zk.close();
-
-            println!("press enter to exit");
-            std::io::stdin().read_line();
         },
         Err(error) => {
             println!("Error connecting to Zookeeper: {}", error)
