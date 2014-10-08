@@ -1,5 +1,16 @@
 #![feature(macro_rules)]
 
+// What's left:
+// TODO Copy ZooDefs.java's content here
+// TODO Implement all operations
+// TODO Notify Watcher about state changes
+// TODO Write a lot of tests
+// TODO Password + Auth
+// TODO Handle zxid, sessionId, sessionPasswd in reconnect
+// TODO Reconnect only until session is valid
+// TODO chroot in connect_string
+// TODO Handle server initiated close
+
 use std::io::{IoResult, MemReader, MemWriter, Timer, TcpStream};
 use std::io::net::ip::SocketAddr;
 use std::num::FromPrimitive;
@@ -11,15 +22,26 @@ macro_rules! fetch_result(
     ($res:ident, $enu:ident($item:ident)) => (
         match $res {
             $enu(response) => Ok(response.$item),
-            ErrorResult(error) => Err(error),
+            ErrorResult(e) => Err(e),
             _ => Err(SystemError)
         }
-    );
+    )
+)
+
+macro_rules! fetch_empty_result(
+    ($res:ident, $enu:ident) => (
+        match $res {
+            $enu => Ok(()),
+            ErrorResult(e) => Err(e),
+            _ => Err(SystemError)
+        }
+    )
 )
 
 #[deriving(Show)]
 enum OpCode {
     Create = 1,
+    Delete = 2,
     GetChildren = 8,
     Ping = 11, // xid
     CloseSession = -11 // xid
@@ -64,7 +86,6 @@ impl Archive for ConnectRequest {
 
 #[deriving(Show)]
 struct ConnectResponse {
-    len: i32,
     protocol_version: i32,
     timeout: i32,
     session_id: i64,
@@ -74,13 +95,12 @@ struct ConnectResponse {
 
 impl ConnectResponse {
     fn read_from(reader: &mut Reader) -> ConnectResponse {
-        let len = reader.read_be_i32().unwrap();
         let protocol_version = reader.read_be_i32().unwrap();
         let timeout = reader.read_be_i32().unwrap();
         let session_id = reader.read_be_i64().unwrap();
         let passwd = read_buffer(reader).unwrap();
         let read_only = reader.read_u8().unwrap() == 0;
-        ConnectResponse{len:len, protocol_version:protocol_version, timeout:timeout, session_id:session_id, passwd:passwd, read_only:read_only}
+        ConnectResponse{protocol_version:protocol_version, timeout:timeout, session_id:session_id, passwd:passwd, read_only:read_only}
     }
 }
 
@@ -138,15 +158,14 @@ pub enum ZkError {
 
 pub type ZkResult<T> = Result<T, ZkError>;
 
-#[deriving(Show)]
 enum Response {
-    GetChildrenResult(GetChildrenResponse),
     CreateResult(CreateResponse),
+    DeleteResult,
+    GetChildrenResult(GetChildrenResponse),
     CloseResult,
     ErrorResult(ZkError)
 }
 
-#[deriving(Show)]
 struct CreateRequest {
     path: String,
     data: Vec<u8>,
@@ -178,7 +197,19 @@ impl CreateResponse {
     }
 }
 
-#[deriving(Show)]
+struct DeleteRequest {
+    path: String,
+    version: i32
+}
+
+impl Archive for DeleteRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+        writer.write_be_i32(self.version);
+    }
+}
+
 struct GetChildrenRequest {
     path: String,
     watch: bool
@@ -347,7 +378,6 @@ impl Zookeeper {
             }
         });
 
-        // TODO need to shut this down clearly, poison pill?
         spawn(proc() {
             println!("writer thread started");
 
@@ -377,7 +407,7 @@ impl Zookeeper {
                             written_tx.send(packet);
                         },
                         () = ping_timeout.recv() => {
-                            println!("Sending Ping to server");
+                            println!("Pinging {}", writer_sock.peer_name());
                             let ping = RequestHeader{xid: -2, opcode: Ping as i32}.to_byte_vec();
                             let res = write_buffer(&mut writer_sock, &ping);
                             if res.is_err() {
@@ -433,8 +463,9 @@ impl Zookeeper {
         match err {
             0 => match packet.opcode {
                 Create => CreateResult(CreateResponse::read_from(buf)),
+                Delete => DeleteResult,
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
-                CloseSession => { CloseResult },
+                CloseSession => CloseResult,
                 opcode => fail!("{}Response not implemented yet", opcode)
             },
             e => {
@@ -453,13 +484,17 @@ impl Zookeeper {
                     continue;
                 }
 
-                let res = write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
-
-                if res.is_err() {
+                let write = write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
+                if write.is_err() {
                     continue;
                 }
 
-                let conn_resp = ConnectResponse::read_from(&mut sock); // TODO error
+                let read = read_buffer(&mut sock);
+                if read.is_err() {
+                    continue;
+                }
+                let mut reader = MemReader::new(read.unwrap());
+                let conn_resp = ConnectResponse::read_from(&mut reader);
 
                 println!("{}", conn_resp);
 
@@ -491,16 +526,6 @@ impl Zookeeper {
         resp_rx.recv()
     }
 
-    pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
-        let req = GetChildrenRequest{path: path, watch: watch};
-
-        let xid = self.xid();
-
-        let result = self.request(req, xid, GetChildren);
-
-        fetch_result!(result, GetChildrenResult(children))
-    }
-
     pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: path, data: data, acl: acl, flags: mode as i32};
 
@@ -509,6 +534,26 @@ impl Zookeeper {
         let result = self.request(req, xid, Create);
 
         fetch_result!(result, CreateResult(path))
+    }
+
+    pub fn delete(&self, path: String, version: i32) -> ZkResult<()> {
+        let req = DeleteRequest{path: path, version: version};
+
+        let xid = self.xid();
+
+        let result = self.request(req, xid, Delete);
+
+        fetch_empty_result!(result, DeleteResult)
+    }
+
+    pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
+        let req = GetChildrenRequest{path: path, watch: watch};
+
+        let xid = self.xid();
+
+        let result = self.request(req, xid, GetChildren);
+
+        fetch_result!(result, GetChildrenResult(children))
     }
 
     #[allow(unused_must_use)]
@@ -533,7 +578,7 @@ fn main() {
 
     match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
         Ok(zk) => {
-            zk.clone();
+            let zk2 = zk.clone();
 
             let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
@@ -543,9 +588,15 @@ fn main() {
 
             println!("children of / -> {}", children);
 
+            let ok = zk.delete("/test".to_string(), -1);
+
+            println!("deleted path /test {}", ok);
+
             std::io::stdin().read_line();
 
-            zk.close();
+            spawn(proc() {
+                zk2.close();                
+            })
         },
         Err(error) => {
             println!("Error connecting to Zookeeper: {}", error)
