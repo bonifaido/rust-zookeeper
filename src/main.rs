@@ -10,6 +10,8 @@
 // TODO Reconnect only until session is valid
 // TODO chroot in connect_string
 // TODO Handle server initiated close
+// TODO Close socket before reconnection
+// TODO Handle specific socket errors, set timeout
 
 use std::io::{IoResult, MemReader, MemWriter, Timer, TcpStream};
 use std::io::net::ip::SocketAddr;
