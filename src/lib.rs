@@ -5,8 +5,8 @@
 // TODO Implement all operations
 // TODO Notify Watcher about state changes
 // TODO Write a lot of tests
-// TODO Password + Auth
-// TODO Handle zxid, sessionId, sessionPasswd in reconnect
+// TODO Auth (ZooKeeper.addAuthInfo)
+// TODO Handle zxid at reconnect
 // TODO Reconnect only until session is valid
 // TODO chroot in connect_string
 // TODO Handle server initiated close
@@ -296,7 +296,7 @@ struct Packet {
     resp_tx: Sender<Response>
 }
 
-mod perms {
+pub mod perms {
     pub static READ: i32 = 1 << 0;
     pub static WRITE: i32 = 1 << 1;
     pub static CREATE: i32 = 1 << 2;
@@ -307,9 +307,9 @@ mod perms {
 
 #[deriving(Show)]
 pub struct Acl {
-    perms: i32,
-    scheme: String,
-    id: String
+    pub perms: i32,
+    pub scheme: String,
+    pub id: String
 }
 
 impl Archive for Acl {
@@ -351,9 +351,9 @@ pub enum WatchedEventType {
 
 #[deriving(Show)]
 pub struct WatchedEvent {
-    event_type: WatchedEventType,
-    keeper_state: KeeperState,
-    path: String
+    pub event_type: WatchedEventType,
+    pub keeper_state: KeeperState,
+    pub path: String
 }
 
 impl WatchedEvent {
@@ -369,15 +369,15 @@ impl WatchedEvent {
 }
 
 #[deriving(Clone)]
-pub struct Zookeeper {
+pub struct ZooKeeper {
     xid: Arc<AtomicInt>,
     running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer thread
 }
 
-impl Zookeeper {
+impl ZooKeeper {
 
-    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<Zookeeper, &str> {
+    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<ZooKeeper, &str> {
 
         // comminucating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
@@ -415,7 +415,7 @@ impl Zookeeper {
             loop {
                 println!("connecting: trying to get new writer_sock");
                 let (new_writer_sock, new_conn_resp) = match running.load(SeqCst) {
-                    true => Zookeeper::connect(&hosts, timeout, conn_resp),
+                    true => ZooKeeper::connect(&hosts, timeout, conn_resp),
                     false => return
                 };
                 writer_sock = new_writer_sock;
@@ -462,9 +462,9 @@ impl Zookeeper {
                 };
 
                 loop {
-                    let reply = Zookeeper::read_reply(&mut reader_sock);
+                    let reply = ZooKeeper::read_reply(&mut reader_sock);
                     if reply.is_err() {
-                        println!("Zookeeper::read_reply {}", reply.err());
+                        println!("ZooKeeper::read_reply {}", reply.err());
                         break;
                     }
                     let (reply_header, mut buf) = reply.unwrap();
@@ -473,7 +473,7 @@ impl Zookeeper {
                         -1 => event_tx.send(WatchedEvent::read_from(&mut buf)),
                         _xid => {
                             let packet = written_rx.recv();
-                            let result = Zookeeper::parse_reply(reply_header.err, &packet, &mut buf);
+                            let result = ZooKeeper::parse_reply(reply_header.err, &packet, &mut buf);
                             packet.resp_tx.send(result);
                          }
                     }
@@ -481,7 +481,7 @@ impl Zookeeper {
             }
         });
 
-        Ok(Zookeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
+        Ok(ZooKeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
     }
 
     fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
@@ -600,41 +600,4 @@ impl Zookeeper {
 
 pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
-}
-
-
-fn main() {
-    struct LoggingWatcher;
-    impl Watcher for LoggingWatcher {
-        fn handle(&self, e: &WatchedEvent) {
-            println!("{}", e)
-        }
-    }
-
-    match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
-        Ok(zk) => {
-            let zk2 = zk.clone();
-
-            let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
-
-            println!("created path -> {}", path);
-
-            let children = zk.get_children("/".to_string(), true);
-
-            println!("children of / -> {}", children);
-
-            let ok = zk.delete("/test".to_string(), -1);
-
-            println!("deleted path /test {}", ok);
-
-            std::io::stdin().read_line();
-
-            spawn(proc() {
-                zk2.close();                
-            })
-        },
-        Err(error) => {
-            println!("Error connecting to Zookeeper: {}", error)
-        }
-    }
 }
