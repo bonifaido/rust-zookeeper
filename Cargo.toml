@@ -1,5 +1,5 @@
 [package]
 
-name = "rust-zk"
+name = "rust-zookeeper"
 version = "0.0.1"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
