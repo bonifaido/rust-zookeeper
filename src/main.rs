@@ -13,8 +13,9 @@
 // TODO Close socket before reconnection
 // TODO Handle specific socket errors, set timeout
 
-use std::io::{IoResult, MemReader, MemWriter, Timer, TcpStream};
+use std::io::{IoResult, MemReader, MemWriter, TcpStream};
 use std::io::net::ip::SocketAddr;
+use std::io::timer::{sleep, Timer};
 use std::num::FromPrimitive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
@@ -69,8 +70,14 @@ struct ConnectRequest {
 }
 
 impl ConnectRequest {
-    fn new(timeout: Duration) -> ConnectRequest {
-        ConnectRequest{protocol_version:0, last_zxid_seen:0, timeout:timeout.num_milliseconds() as i32, session_id:0, passwd:[0, ..15].to_vec(), read_only:false}
+    fn from(conn_resp: ConnectResponse, last_zxid_seen: i64) -> ConnectRequest {
+        ConnectRequest{
+            protocol_version: conn_resp.protocol_version,
+            last_zxid_seen: last_zxid_seen,
+            timeout: conn_resp.timeout,
+            session_id: conn_resp.session_id,
+            passwd: conn_resp.passwd,
+            read_only: conn_resp.read_only}
     }
 }
 
@@ -96,13 +103,27 @@ struct ConnectResponse {
 }
 
 impl ConnectResponse {
+    fn initial(timeout: Duration) -> ConnectResponse {
+        ConnectResponse{
+            protocol_version: 0,
+            timeout: timeout.num_milliseconds() as i32,
+            session_id: 0,
+            passwd: [0, ..15].to_vec(),
+            read_only: false}
+    }
+
     fn read_from(reader: &mut Reader) -> ConnectResponse {
         let protocol_version = reader.read_be_i32().unwrap();
         let timeout = reader.read_be_i32().unwrap();
         let session_id = reader.read_be_i64().unwrap();
         let passwd = read_buffer(reader).unwrap();
         let read_only = reader.read_u8().unwrap() == 0;
-        ConnectResponse{protocol_version:protocol_version, timeout:timeout, session_id:session_id, passwd:passwd, read_only:read_only}
+        ConnectResponse{
+            protocol_version: protocol_version,
+            timeout: timeout,
+            session_id: session_id,
+            passwd: passwd,
+            read_only: read_only}
     }
 }
 
@@ -340,7 +361,10 @@ impl WatchedEvent {
         let typ = reader.read_be_i32().unwrap();
         let state = reader.read_be_i32().unwrap();
         let path = read_string(reader);
-        WatchedEvent{event_type: FromPrimitive::from_i32(typ).unwrap(), keeper_state: FromPrimitive::from_i32(state).unwrap(), path: path}
+        WatchedEvent{
+            event_type: FromPrimitive::from_i32(typ).unwrap(),
+            keeper_state: FromPrimitive::from_i32(state).unwrap(),
+            path: path}
     }
 }
 
@@ -385,13 +409,18 @@ impl Zookeeper {
 
             let mut timer = Timer::new().unwrap();
             let ping_timeout = timer.periodic(timeout);
+            let mut writer_sock;
+            let mut conn_resp = ConnectResponse::initial(timeout);
 
             loop {
-                println!("connection error: trying to get new writer_sock");
-                let mut writer_sock = match running.load(SeqCst) {
-                    true => Zookeeper::connect(&hosts, timeout).unwrap(),
+                println!("connecting: trying to get new writer_sock");
+                let (new_writer_sock, new_conn_resp) = match running.load(SeqCst) {
+                    true => Zookeeper::connect(&hosts, timeout, conn_resp),
                     false => return
                 };
+                writer_sock = new_writer_sock;
+                conn_resp = new_conn_resp;
+
                 reader_sock_tx.send(writer_sock.clone());
 
                 loop {
@@ -426,7 +455,7 @@ impl Zookeeper {
             println!("reader thread started");
 
             loop {
-                println!("connection error: trying to get new reader_sock");
+                println!("connecting: trying to get new reader_sock");
                 let mut reader_sock = match reader_sock_rx.recv_opt() {
                     Ok(sock) => sock,
                     Err(_) => return
@@ -438,13 +467,13 @@ impl Zookeeper {
                         println!("Zookeeper::read_reply {}", reply.err());
                         break;
                     }
-                    let (reply_header, mut buffer) = reply.unwrap();
+                    let (reply_header, mut buf) = reply.unwrap();
                     match reply_header.xid {
                         -2 => println!("Got ping event"),
-                        -1 => event_tx.send(WatchedEvent::read_from(&mut buffer)),
+                        -1 => event_tx.send(WatchedEvent::read_from(&mut buf)),
                         _xid => {
                             let packet = written_rx.recv();
-                            let result = Zookeeper::parse_reply(reply_header.err, &packet, &mut buffer);
+                            let result = Zookeeper::parse_reply(reply_header.err, &packet, &mut buf);
                             packet.resp_tx.send(result);
                          }
                     }
@@ -476,17 +505,20 @@ impl Zookeeper {
         }
     }
 
-    fn connect(hosts: &Vec<SocketAddr>, timeout: Duration) -> IoResult<TcpStream> {
+    fn connect(hosts: &Vec<SocketAddr>, timeout: Duration, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
+        let conn_req = ConnectRequest::from(conn_resp, 0).to_byte_vec();
+
         loop {
             for host in hosts.iter() {
                 println!("Connecting to {}...", host);
                 let mut sock = TcpStream::connect_timeout(*host, timeout);
                 if sock.is_err() {
-                    println!("Connection timeout {}", host);
+                    println!("Failed to connect to {}", host);
+                    sleep(timeout);
                     continue;
                 }
 
-                let write = write_buffer(&mut sock, &ConnectRequest::new(timeout).to_byte_vec());
+                let write = write_buffer(&mut sock, &conn_req);
                 if write.is_err() {
                     continue;
                 }
@@ -495,12 +527,13 @@ impl Zookeeper {
                 if read.is_err() {
                     continue;
                 }
-                let mut reader = MemReader::new(read.unwrap());
-                let conn_resp = ConnectResponse::read_from(&mut reader);
+
+                let mut buf = MemReader::new(read.unwrap());
+                let conn_resp = ConnectResponse::read_from(&mut buf);
 
                 println!("{}", conn_resp);
 
-                return sock
+                return (sock.unwrap(), conn_resp)
             }
         }
     }
@@ -578,7 +611,7 @@ fn main() {
         }
     }
 
-    match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(2), LoggingWatcher) {
+    match Zookeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
             let zk2 = zk.clone();
 

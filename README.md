@@ -1,6 +1,6 @@
-rust-zk
-=======
+rust-zookeeper
+==============
 
-Zookeeper client written in Rust - Work in Progress (25%)
+Zookeeper client written 100% in Rust - Work in Progress
 
-[![Build Status](https://travis-ci.org/bonifaido/rust-zk.svg?branch=master)](https://travis-ci.org/bonifaido/rust-zk)
+[![Build Status](https://travis-ci.org/bonifaido/rust-zookeeper.svg?branch=master)](https://travis-ci.org/bonifaido/rust-zookeeper)
