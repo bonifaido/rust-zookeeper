@@ -18,13 +18,13 @@ fn main() {
 
             println!("authenticated -> {}", auth);
 
-            let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
+            let path = zk.create("/test".to_string(), vec![1,2], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
-            println!("created path -> {}", path);
+            println!("created -> {}", path);
 
             let exists = zk.exists("/test".to_string(), true);
 
-            println!("exists path -> {}", exists);
+            println!("exists -> {}", exists);
 
             let dont_exists = zk.exists("/blabla".to_string(), true);
 
@@ -32,15 +32,19 @@ fn main() {
 
             let acl = zk.get_acl("/test".to_string());
 
-            println!("acl path -> {}", acl);
+            println!("acl -> {}", acl);
 
             let children = zk.get_children("/".to_string(), true);
 
             println!("children of / -> {}", children);
 
+            let data = zk.get_data("/test".to_string(), true);
+
+            println!("data -> {}", data);
+
             let delete = zk.delete("/test".to_string(), -1);
 
-            println!("deleted path /test -> {}", delete);
+            println!("deleted /test -> {}", delete);
 
             std::io::stdin().read_line();
 

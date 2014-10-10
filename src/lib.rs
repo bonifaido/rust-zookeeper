@@ -70,6 +70,7 @@ enum OpCode {
     Exists = 3,
     GetAcl = 6,
     GetChildren = 8,
+    GetData = 4,
     Ping = 11,
     CloseSession = -11
 }
@@ -207,13 +208,14 @@ pub type ZkResult<T> = Result<T, ZkError>;
 
 enum Response {
     AuthResult,
+    CloseResult,
     CreateResult(CreateResponse),
     DeleteResult,
+    ErrorResult(ZkError),
     ExistsResult(ExistsResponse),
     GetAclResult(GetAclResponse),
     GetChildrenResult(GetChildrenResponse),
-    CloseResult,
-    ErrorResult(ZkError)
+    GetDataResult(GetDataResponse)
 }
 
 struct CreateRequest {
@@ -334,6 +336,31 @@ impl GetChildrenResponse {
             children.push(read_string(reader));
         }
         GetChildrenResponse{children: children}
+    }
+}
+
+struct GetDataRequest {
+    path: String,
+    watch: bool
+}
+
+impl Archive for GetDataRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+        writer.write_u8(self.watch as u8);
+    }
+}
+
+struct GetDataResponse {
+    data_stat: (Vec<u8>, Stat)
+}
+
+impl GetDataResponse {
+    fn read_from(reader: &mut Reader) -> GetDataResponse {
+        let data = read_buffer(reader).unwrap();
+        let stat = Stat::read_from(reader);
+        GetDataResponse{data_stat: (data, stat)}
     }
 }
 
@@ -614,12 +641,13 @@ impl ZooKeeper {
         match err {
             0 => match packet.opcode {
                 Auth => AuthResult,
+                CloseSession => CloseResult,
                 Create => CreateResult(CreateResponse::read_from(buf)),
                 Delete => DeleteResult,
                 Exists => ExistsResult(ExistsResponse::read_from(buf)),
                 GetAcl => GetAclResult(GetAclResponse::read_from(buf)),
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
-                CloseSession => CloseResult,
+                GetData => GetDataResult(GetDataResponse::read_from(buf)),
                 opcode => fail!("{}Response not implemented yet", opcode)
             },
             e => {
@@ -725,6 +753,14 @@ impl ZooKeeper {
         let result = self.request(req, self.xid(), GetChildren);
 
         fetch_result!(result, GetChildrenResult(children))
+    }
+
+    pub fn get_data(&self, path: String, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
+        let req = GetDataRequest{path: path, watch: watch};
+
+        let result = self.request(req, self.xid(), GetData);
+
+        fetch_result!(result, GetDataResult(data_stat))
     }
 
     #[allow(unused_must_use)]
