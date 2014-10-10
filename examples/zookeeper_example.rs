@@ -30,6 +30,10 @@ fn main() {
 
             println!("don't exists path -> {}", dont_exists);
 
+            let acl = zk.get_acl("/test".to_string());
+
+            println!("acl path -> {}", acl);
+
             let children = zk.get_children("/".to_string(), true);
 
             println!("children of / -> {}", children);

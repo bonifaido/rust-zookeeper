@@ -40,12 +40,35 @@ macro_rules! fetch_empty_result(
     )
 )
 
+#[allow(unused_must_use)]
+fn write_buffer(writer: &mut Writer, buffer: &Vec<u8>) -> IoResult<()> {
+    writer.write_be_i32(buffer.len() as i32);
+    return writer.write(buffer.as_slice());
+}
+
+fn read_buffer(reader: &mut Reader) -> IoResult<Vec<u8>> {
+    let len = try!(reader.read_be_i32());
+    reader.read_exact(len as uint)
+}
+
+#[allow(unused_must_use)]
+fn write_string(writer: &mut Writer, string: &String) {
+    writer.write_be_i32(string.len() as i32);
+    writer.write_str(string.as_slice());
+}
+
+fn read_string(reader: &mut Reader) -> String {
+    let raw = read_buffer(reader).unwrap();
+    String::from_utf8(raw).unwrap()
+}
+
 #[deriving(Show)]
 enum OpCode {
     Auth = 100,
     Create = 1,
     Delete = 2,
     Exists = 3,
+    GetAcl = 6,
     GetChildren = 8,
     Ping = 11,
     CloseSession = -11
@@ -187,6 +210,7 @@ enum Response {
     CreateResult(CreateResponse),
     DeleteResult,
     ExistsResult(ExistsResponse),
+    GetAclResult(GetAclResponse),
     GetChildrenResult(GetChildrenResponse),
     CloseResult,
     ErrorResult(ZkError)
@@ -258,6 +282,33 @@ impl ExistsResponse {
     }
 }
 
+struct GetAclRequest {
+    path: String
+}
+
+impl Archive for GetAclRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+    }
+}
+
+struct GetAclResponse {
+    acl_stat: (Vec<Acl>, Stat)
+}
+
+impl GetAclResponse {
+    fn read_from(reader: &mut Reader) -> GetAclResponse {
+        let len = reader.read_be_i32().unwrap();
+        let mut acl = Vec::new();
+        for _ in range(0, len) {
+            acl.push(Acl::read_from(reader));
+        }
+        let stat = Stat::read_from(reader);
+        GetAclResponse{acl_stat: (acl, stat)}
+    }
+}
+
 struct GetChildrenRequest {
     path: String,
     watch: bool
@@ -286,13 +337,13 @@ impl GetChildrenResponse {
     }
 }
 
-struct AuthPacket {
+struct AuthRequest {
     typ: i32,
     scheme: String,
     auth: Vec<u8>
 }
 
-impl Archive for AuthPacket {
+impl Archive for AuthRequest {
     #[allow(unused_must_use)]
     fn write_into(&self, writer: &mut Writer) {
         writer.write_be_i32(self.typ);
@@ -305,28 +356,6 @@ struct EmptyRequest;
 
 impl Archive for EmptyRequest {
     fn write_into(&self, _: &mut Writer) {}
-}
-
-#[allow(unused_must_use)]
-fn write_buffer(writer: &mut Writer, buffer: &Vec<u8>) -> IoResult<()> {
-    writer.write_be_i32(buffer.len() as i32);
-    return writer.write(buffer.as_slice());
-}
-
-fn read_buffer(reader: &mut Reader) -> IoResult<Vec<u8>> {
-    let len = try!(reader.read_be_i32());
-    reader.read_exact(len as uint)
-}
-
-#[allow(unused_must_use)]
-fn write_string(writer: &mut Writer, string: &String) {
-    writer.write_be_i32(string.len() as i32);
-    writer.write_str(string.as_slice());
-}
-
-fn read_string(reader: &mut Reader) -> String {
-    let raw = read_buffer(reader).unwrap();
-    String::from_utf8(raw).unwrap()
 }
 
 struct Packet {
@@ -349,6 +378,15 @@ pub struct Acl {
     pub perms: i32,
     pub scheme: String,
     pub id: String
+}
+
+impl Acl {
+    fn read_from(reader: &mut Reader) -> Acl {
+        let perms = reader.read_be_i32().unwrap();
+        let scheme = read_string(reader);
+        let id = read_string(reader);
+        Acl{perms: perms, scheme: scheme, id: id}
+    }
 }
 
 impl Archive for Acl {
@@ -579,6 +617,7 @@ impl ZooKeeper {
                 Create => CreateResult(CreateResponse::read_from(buf)),
                 Delete => DeleteResult,
                 Exists => ExistsResult(ExistsResponse::read_from(buf)),
+                GetAcl => GetAclResult(GetAclResponse::read_from(buf)),
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
                 CloseSession => CloseResult,
                 opcode => fail!("{}Response not implemented yet", opcode)
@@ -641,7 +680,7 @@ impl ZooKeeper {
     }
 
     pub fn add_auth(&self, scheme: String, auth: Vec<u8>) -> ZkResult<()> {
-        let req = AuthPacket{typ: 0, scheme: scheme, auth: auth};
+        let req = AuthRequest{typ: 0, scheme: scheme, auth: auth};
 
         let result = self.request(req, -4, Auth);
 
@@ -670,6 +709,14 @@ impl ZooKeeper {
         let result = self.request(req, self.xid(), Exists);
 
         fetch_result!(result, ExistsResult(stat))
+    }
+
+    pub fn get_acl(&self, path: String) -> ZkResult<(Vec<Acl>, Stat)> {
+        let req = GetAclRequest{path: path};
+
+        let result = self.request(req, self.xid(), GetAcl);
+
+        fetch_result!(result, GetAclResult(acl_stat))
     }
 
     pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
