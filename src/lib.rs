@@ -45,6 +45,7 @@ enum OpCode {
     Auth = 100,
     Create = 1,
     Delete = 2,
+    Exists = 3,
     GetChildren = 8,
     Ping = 11,
     CloseSession = -11
@@ -185,6 +186,7 @@ enum Response {
     AuthResult,
     CreateResult(CreateResponse),
     DeleteResult,
+    ExistsResult(ExistsResponse),
     GetChildrenResult(GetChildrenResponse),
     CloseResult,
     ErrorResult(ZkError)
@@ -210,7 +212,6 @@ impl Archive for CreateRequest {
     }
 }
 
-#[deriving(Show)]
 struct CreateResponse {
     path: String
 }
@@ -234,6 +235,29 @@ impl Archive for DeleteRequest {
     }
 }
 
+struct ExistsRequest {
+    path: String,
+    watch: bool
+}
+
+impl Archive for ExistsRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+        writer.write_u8(self.watch as u8);
+    }
+}
+
+struct ExistsResponse {
+    stat: Stat
+}
+
+impl ExistsResponse {
+    fn read_from(reader: &mut Reader) -> ExistsResponse {
+        ExistsResponse{stat: Stat::read_from(reader)}
+    }
+}
+
 struct GetChildrenRequest {
     path: String,
     watch: bool
@@ -247,7 +271,6 @@ impl Archive for GetChildrenRequest {
     }
 }
 
-#[deriving(Show)]
 struct GetChildrenResponse {
     children: Vec<String>
 }
@@ -334,6 +357,49 @@ impl Archive for Acl {
         writer.write_be_i32(self.perms);
         write_string(writer, &self.scheme);
         write_string(writer, &self.id);
+    }
+}
+
+#[deriving(Show)]
+pub struct Stat {
+    pub czxid: i64,
+    pub mzxid: i64,
+    pub ctime: i64,
+    pub mtime: i64,
+    pub version: i32,
+    pub cversion: i32,
+    pub aversion: i32,
+    pub ephemeral_owner: i64,
+    pub data_length: i32,
+    pub num_children: i32,
+    pub pzxid: i64
+}
+
+impl Stat {
+    fn read_from(reader: &mut Reader) -> Stat {
+        let czxid = reader.read_be_i64().unwrap();
+        let mzxid = reader.read_be_i64().unwrap();
+        let ctime = reader.read_be_i64().unwrap();
+        let mtime = reader.read_be_i64().unwrap();
+        let version = reader.read_be_i32().unwrap();
+        let cversion = reader.read_be_i32().unwrap();
+        let aversion = reader.read_be_i32().unwrap();
+        let ephemeral_owner = reader.read_be_i64().unwrap();
+        let data_length = reader.read_be_i32().unwrap();
+        let num_children = reader.read_be_i32().unwrap();
+        let pzxid = reader.read_be_i64().unwrap();
+        Stat{
+            czxid: czxid,
+            mzxid: mzxid,
+            ctime: ctime,
+            mtime: mtime,
+            version: version,
+            cversion: cversion,
+            aversion: aversion,
+            ephemeral_owner: ephemeral_owner,
+            data_length: data_length,
+            num_children: num_children,
+            pzxid: pzxid}
     }
 }
 
@@ -512,6 +578,7 @@ impl ZooKeeper {
                 Auth => AuthResult,
                 Create => CreateResult(CreateResponse::read_from(buf)),
                 Delete => DeleteResult,
+                Exists => ExistsResult(ExistsResponse::read_from(buf)),
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
                 CloseSession => CloseResult,
                 opcode => fail!("{}Response not implemented yet", opcode)
@@ -595,6 +662,14 @@ impl ZooKeeper {
         let result = self.request(req, self.xid(), Delete);
 
         fetch_empty_result!(result, DeleteResult)
+    }
+
+    pub fn exists(&self, path: String, watch: bool) -> ZkResult<Stat> {
+        let req = ExistsRequest{path: path, watch: watch};
+
+        let result = self.request(req, self.xid(), Exists);
+
+        fetch_result!(result, ExistsResult(stat))
     }
 
     pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {

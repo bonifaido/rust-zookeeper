@@ -22,6 +22,14 @@ fn main() {
 
             println!("created path -> {}", path);
 
+            let exists = zk.exists("/test".to_string(), true);
+
+            println!("exists path -> {}", exists);
+
+            let dont_exists = zk.exists("/blabla".to_string(), true);
+
+            println!("don't exists path -> {}", dont_exists);
+
             let children = zk.get_children("/".to_string(), true);
 
             println!("children of / -> {}", children);
