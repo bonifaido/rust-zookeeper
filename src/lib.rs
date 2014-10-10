@@ -43,11 +43,12 @@ macro_rules! fetch_empty_result(
 
 #[deriving(Show)]
 enum OpCode {
+    Auth = 100,
     Create = 1,
     Delete = 2,
     GetChildren = 8,
-    Ping = 11, // xid
-    CloseSession = -11 // xid
+    Ping = 11,
+    CloseSession = -11
 }
 
 trait Archive {
@@ -182,6 +183,7 @@ pub enum ZkError {
 pub type ZkResult<T> = Result<T, ZkError>;
 
 enum Response {
+    AuthResult,
     CreateResult(CreateResponse),
     DeleteResult,
     GetChildrenResult(GetChildrenResponse),
@@ -259,6 +261,21 @@ impl GetChildrenResponse {
             children.push(read_string(reader));
         }
         GetChildrenResponse{children: children}
+    }
+}
+
+struct AuthPacket {
+    typ: i32,
+    scheme: String,
+    auth: Vec<u8>
+}
+
+impl Archive for AuthPacket {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        writer.write_be_i32(self.typ);
+        write_string(writer, &self.scheme);
+        write_buffer(writer, &self.auth);
     }
 }
 
@@ -372,7 +389,7 @@ impl WatchedEvent {
 pub struct ZooKeeper {
     xid: Arc<AtomicInt>,
     running: Arc<AtomicBool>,
-    packet_tx: Sender<Packet> // sending Packets from methods to writer thread
+    packet_tx: Sender<Packet> // sending Packets from methods to writer task
 }
 
 impl ZooKeeper {
@@ -381,11 +398,11 @@ impl ZooKeeper {
 
         // comminucating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
-        // comminucating requests (as Packets) from instance methods to writer thread
+        // comminucating requests (as Packets) from instance methods to writer task
         let (packet_tx, packet_rx): (Sender<Packet>, Receiver<Packet>) = channel();
-        // communicating sent Packets from writer thread to the reader thread
+        // communicating sent Packets from writer task to the reader task
         let (written_tx, written_rx) = channel();
-        // event channel for passing WatchedEvents to watcher on a seperate thread
+        // event channel for passing WatchedEvents to watcher on a seperate task
         let (event_tx, event_rx) = channel();
 
         let running = Arc::new(AtomicBool::new(true));
@@ -394,7 +411,7 @@ impl ZooKeeper {
         let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
         spawn(proc() {
-            println!("event thread started");
+            println!("event task started");
 
             loop {
                 match event_rx.recv_opt() {
@@ -405,7 +422,7 @@ impl ZooKeeper {
         });
 
         spawn(proc() {
-            println!("writer thread started");
+            println!("writer task started");
 
             let mut timer = Timer::new().unwrap();
             let ping_timeout = timer.periodic(timeout);
@@ -452,7 +469,7 @@ impl ZooKeeper {
         });
 
         spawn(proc() {
-            println!("reader thread started");
+            println!("reader task started");
 
             loop {
                 println!("connecting: trying to get new reader_sock");
@@ -469,8 +486,8 @@ impl ZooKeeper {
                     }
                     let (reply_header, mut buf) = reply.unwrap();
                     match reply_header.xid {
-                        -2 => println!("Got ping event"),
                         -1 => event_tx.send(WatchedEvent::read_from(&mut buf)),
+                        -2 => println!("Got ping event"),
                         _xid => {
                             let packet = written_rx.recv();
                             let result = ZooKeeper::parse_reply(reply_header.err, &packet, &mut buf);
@@ -493,6 +510,7 @@ impl ZooKeeper {
     fn parse_reply(err: i32, packet: &Packet, buf: &mut Reader) -> Response {
         match err {
             0 => match packet.opcode {
+                Auth => AuthResult,
                 Create => CreateResult(CreateResponse::read_from(buf)),
                 Delete => DeleteResult,
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
@@ -554,6 +572,14 @@ impl ZooKeeper {
         self.packet_tx.send(packet);
 
         resp_rx.recv()
+    }
+
+    pub fn add_auth(&self, scheme: String, auth: Vec<u8>) -> ZkResult<()> {
+        let req = AuthPacket{typ: 0, scheme: scheme, auth: auth};
+
+        let result = self.request(req, -4, Auth);
+
+        fetch_empty_result!(result, AuthResult)
     }
 
     pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {

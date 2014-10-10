@@ -14,7 +14,9 @@ impl Watcher for LoggingWatcher {
 fn main() {
     match ZooKeeper::new("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
-            let zk2 = zk.clone();
+            let auth = zk.add_auth_info("digest".to_string(), vec![1,2,3,4]);
+
+            println!("authenticated -> {}", auth);
 
             let path = zk.create("/test".to_string(), vec![], vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}], Ephemeral);
 
@@ -24,13 +26,14 @@ fn main() {
 
             println!("children of / -> {}", children);
 
-            let ok = zk.delete("/test".to_string(), -1);
+            let delete = zk.delete("/test".to_string(), -1);
 
-            println!("deleted path /test {}", ok);
+            println!("deleted path /test -> {}", delete);
 
             std::io::stdin().read_line();
 
             // Showing thet this client can be shared between tasks
+            let zk2 = zk.clone();
             spawn(proc() {
                 zk2.close();                
             })
