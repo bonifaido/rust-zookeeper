@@ -545,27 +545,21 @@ impl ZooKeeper {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = MemWriter::new();
-
         rh.write_into(&mut buf);
         req.write_into(&mut buf);
 
         let (resp_tx, resp_rx) = channel();
         let packet = Packet{opcode: opcode, data: buf.unwrap(), resp_tx: resp_tx};
 
-        println!("writer thread sending {}", packet.opcode);
-
         self.packet_tx.send(packet);
 
-        println!("waiting for response");
         resp_rx.recv()
     }
 
     pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: path, data: data, acl: acl, flags: mode as i32};
 
-        let xid = self.xid();
-
-        let result = self.request(req, xid, Create);
+        let result = self.request(req, self.xid(), Create);
 
         fetch_result!(result, CreateResult(path))
     }
@@ -573,9 +567,7 @@ impl ZooKeeper {
     pub fn delete(&self, path: String, version: i32) -> ZkResult<()> {
         let req = DeleteRequest{path: path, version: version};
 
-        let xid = self.xid();
-
-        let result = self.request(req, xid, Delete);
+        let result = self.request(req, self.xid(), Delete);
 
         fetch_empty_result!(result, DeleteResult)
     }
@@ -583,9 +575,7 @@ impl ZooKeeper {
     pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: path, watch: watch};
 
-        let xid = self.xid();
-
-        let result = self.request(req, xid, GetChildren);
+        let result = self.request(req, self.xid(), GetChildren);
 
         fetch_result!(result, GetChildrenResult(children))
     }
