@@ -1,7 +1,6 @@
 #![feature(macro_rules)]
 
 // What's left:
-// TODO Auth (ZooKeeper.addAuthInfo)
 // TODO Copy ZooDefs.java's content here
 // TODO Implement all operations
 // TODO Notify Watcher about state changes

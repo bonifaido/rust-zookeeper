@@ -14,7 +14,7 @@ impl Watcher for LoggingWatcher {
 fn main() {
     match ZooKeeper::new("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
-            let auth = zk.add_auth_info("digest".to_string(), vec![1,2,3,4]);
+            let auth = zk.add_auth("digest".to_string(), vec![1,2,3,4]);
 
             println!("authenticated -> {}", auth);
 
