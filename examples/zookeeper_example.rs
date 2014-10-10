@@ -12,8 +12,7 @@ impl Watcher for LoggingWatcher {
 }
 
 fn main() {
-
-    match ZooKeeper::new("127.0.0.1:2182,127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
+    match ZooKeeper::new("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
             let zk2 = zk.clone();
 
@@ -31,6 +30,7 @@ fn main() {
 
             std::io::stdin().read_line();
 
+            // Showing thet this client can be shared between tasks
             spawn(proc() {
                 zk2.close();                
             })

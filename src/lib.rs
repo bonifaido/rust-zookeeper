@@ -1,11 +1,11 @@
 #![feature(macro_rules)]
 
 // What's left:
+// TODO Auth (ZooKeeper.addAuthInfo)
 // TODO Copy ZooDefs.java's content here
 // TODO Implement all operations
 // TODO Notify Watcher about state changes
 // TODO Write a lot of tests
-// TODO Auth (ZooKeeper.addAuthInfo)
 // TODO Handle zxid at reconnect
 // TODO Reconnect only until session is valid
 // TODO chroot in connect_string
@@ -15,7 +15,7 @@
 
 use std::io::{IoResult, MemReader, MemWriter, TcpStream};
 use std::io::net::ip::SocketAddr;
-use std::io::timer::{sleep, Timer};
+use std::io::timer::Timer;
 use std::num::FromPrimitive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
@@ -297,12 +297,12 @@ struct Packet {
 }
 
 pub mod perms {
-    pub static READ: i32 = 1 << 0;
-    pub static WRITE: i32 = 1 << 1;
-    pub static CREATE: i32 = 1 << 2;
-    pub static DELETE: i32 = 1 << 3;
-    pub static ADMIN: i32 = 1 << 4;
-    pub static ALL: i32 = READ | WRITE | CREATE | DELETE | ADMIN;
+    pub const READ: i32 = 1 << 0;
+    pub const WRITE: i32 = 1 << 1;
+    pub const CREATE: i32 = 1 << 2;
+    pub const DELETE: i32 = 1 << 3;
+    pub const ADMIN: i32 = 1 << 4;
+    pub const ALL: i32 = READ | WRITE | CREATE | DELETE | ADMIN;
 }
 
 #[deriving(Show)]
@@ -415,7 +415,7 @@ impl ZooKeeper {
             loop {
                 println!("connecting: trying to get new writer_sock");
                 let (new_writer_sock, new_conn_resp) = match running.load(SeqCst) {
-                    true => ZooKeeper::connect(&hosts, timeout, conn_resp),
+                    true => ZooKeeper::connect(&hosts, conn_resp),
                     false => return
                 };
                 writer_sock = new_writer_sock;
@@ -505,16 +505,15 @@ impl ZooKeeper {
         }
     }
 
-    fn connect(hosts: &Vec<SocketAddr>, timeout: Duration, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
+    fn connect(hosts: &Vec<SocketAddr>, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
         let conn_req = ConnectRequest::from(conn_resp, 0).to_byte_vec();
 
         loop {
             for host in hosts.iter() {
                 println!("Connecting to {}...", host);
-                let mut sock = TcpStream::connect_timeout(*host, timeout);
+                let mut sock = TcpStream::connect_timeout(*host, Duration::seconds(1));
                 if sock.is_err() {
                     println!("Failed to connect to {}", host);
-                    sleep(timeout);
                     continue;
                 }
 
