@@ -300,7 +300,7 @@ impl Archive for SetAclRequest {
     fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         self.path.write_to(writer);
         self.acl.write_to(writer);
-        writer.write_be_i32(self.version as i32)
+        writer.write_be_i32(self.version)
     }
 }
 
@@ -315,7 +315,7 @@ impl Archive for SetDataRequest {
     fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         self.path.write_to(writer);
         self.data.write_to(writer);
-        writer.write_be_i32(self.version as i32)
+        writer.write_be_i32(self.version)
     }
 }
 
