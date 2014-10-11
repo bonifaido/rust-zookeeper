@@ -69,6 +69,7 @@ enum OpCode {
     Delete = 2,
     Exists = 3,
     GetAcl = 6,
+    SetAcl = 7,
     GetChildren = 8,
     GetData = 4,
     Ping = 11,
@@ -212,10 +213,11 @@ enum Response {
     CreateResult(CreateResponse),
     DeleteResult,
     ErrorResult(ZkError),
-    ExistsResult(ExistsResponse),
+    ExistsResult(StatResponse),
     GetAclResult(GetAclResponse),
     GetChildrenResult(GetChildrenResponse),
-    GetDataResult(GetDataResponse)
+    GetDataResult(GetDataResponse),
+    SetAclResult(StatResponse)
 }
 
 struct CreateRequest {
@@ -274,13 +276,13 @@ impl Archive for ExistsRequest {
     }
 }
 
-struct ExistsResponse {
+struct StatResponse {
     stat: Stat
 }
 
-impl ExistsResponse {
-    fn read_from(reader: &mut Reader) -> ExistsResponse {
-        ExistsResponse{stat: Stat::read_from(reader)}
+impl StatResponse {
+    fn read_from(reader: &mut Reader) -> StatResponse {
+        StatResponse{stat: Stat::read_from(reader)}
     }
 }
 
@@ -308,6 +310,24 @@ impl GetAclResponse {
         }
         let stat = Stat::read_from(reader);
         GetAclResponse{acl_stat: (acl, stat)}
+    }
+}
+
+struct SetAclRequest {
+    path: String,
+    acl: Vec<Acl>,
+    version: i32
+}
+
+impl Archive for SetAclRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+        writer.write_be_i32(self.acl.len() as i32);
+        for a in self.acl.iter() {
+            a.write_into(writer);
+        }
+        writer.write_be_i32(self.version as i32);
     }
 }
 
@@ -644,8 +664,9 @@ impl ZooKeeper {
                 CloseSession => CloseResult,
                 Create => CreateResult(CreateResponse::read_from(buf)),
                 Delete => DeleteResult,
-                Exists => ExistsResult(ExistsResponse::read_from(buf)),
+                Exists => ExistsResult(StatResponse::read_from(buf)),
                 GetAcl => GetAclResult(GetAclResponse::read_from(buf)),
+                SetAcl => SetAclResult(StatResponse::read_from(buf)),
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
                 GetData => GetDataResult(GetDataResponse::read_from(buf)),
                 opcode => fail!("{}Response not implemented yet", opcode)
@@ -761,6 +782,14 @@ impl ZooKeeper {
         let result = self.request(GetData, self.xid(), req);
 
         fetch_result!(result, GetDataResult(data_stat))
+    }
+
+    pub fn set_acl(&self, path: String, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
+        let req = SetAclRequest{path: path, acl: acl, version: version};
+
+        let result = self.request(SetAcl, self.xid(), req);
+
+        fetch_result!(result, SetAclResult(stat))
     }
 
     #[allow(unused_must_use)]
