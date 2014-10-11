@@ -1,0 +1,11 @@
+// TODO split Archive into InArchive and OutArchive
+// TODO Copy ZooDefs.java's content here
+// TODO Implement all operations as async
+// TODO Notify Watcher about state changes
+// TODO Write a lot of tests
+// TODO Handle zxid at reconnect
+// TODO Reconnect only until session is valid
+// TODO chroot in connect_string
+// TODO Handle server initiated close
+// TODO Close socket before reconnection
+// TODO Handle specific socket errors, set timeout
