@@ -232,10 +232,7 @@ impl Archive for CreateRequest {
     fn write_into(&self, writer: &mut Writer) {
         write_string(writer, &self.path);
         write_buffer(writer, &self.data);
-        writer.write_be_i32(self.acl.len() as i32);
-        for a in self.acl.iter() {
-            a.write_into(writer);
-        }
+        self.acl.write_into(writer);
         writer.write_be_i32(self.flags);
     }
 }
@@ -323,10 +320,7 @@ impl Archive for SetAclRequest {
     #[allow(unused_must_use)]
     fn write_into(&self, writer: &mut Writer) {
         write_string(writer, &self.path);
-        writer.write_be_i32(self.acl.len() as i32);
-        for a in self.acl.iter() {
-            a.write_into(writer);
-        }
+        self.acl.write_into(writer);
         writer.write_be_i32(self.version as i32);
     }
 }
@@ -442,6 +436,16 @@ impl Archive for Acl {
         writer.write_be_i32(self.perms);
         write_string(writer, &self.scheme);
         write_string(writer, &self.id);
+    }
+}
+
+impl<T: Archive> Archive for Vec<T> {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        writer.write_be_i32(self.len() as i32);
+        for i in self.iter() {
+            i.write_into(writer);
+        }
     }
 }
 
