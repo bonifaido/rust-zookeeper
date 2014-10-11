@@ -237,18 +237,20 @@ impl Archive for DeleteRequest {
     }
 }
 
-pub struct ExistsRequest {
+struct StringAndBoolRequest {
     pub path: String,
     pub watch: bool
 }
 
-impl Archive for ExistsRequest {
+impl Archive for StringAndBoolRequest {
     #[allow(unused_must_use)]
     fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
         self.path.write_into(writer);
         writer.write_u8(self.watch as u8)
     }
 }
+
+pub type ExistsRequest = StringAndBoolRequest;
 
 pub struct StatResponse {
     pub stat: Stat
@@ -317,18 +319,7 @@ impl Archive for SetDataRequest {
     }
 }
 
-pub struct GetChildrenRequest {
-    pub path: String,
-    pub watch: bool
-}
-
-impl Archive for GetChildrenRequest {
-    #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
-        writer.write_u8(self.watch as u8)
-    }
-}
+pub type GetChildrenRequest = StringAndBoolRequest;
 
 pub struct GetChildrenResponse {
     pub children: Vec<String>
@@ -345,18 +336,7 @@ impl GetChildrenResponse {
     }
 }
 
-pub struct GetDataRequest {
-    pub path: String,
-    pub watch: bool
-}
-
-impl Archive for GetDataRequest {
-    #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
-        writer.write_u8(self.watch as u8)
-    }
-}
+pub type GetDataRequest = StringAndBoolRequest;
 
 pub struct GetDataResponse {
     pub data_stat: (Vec<u8>, Stat)
