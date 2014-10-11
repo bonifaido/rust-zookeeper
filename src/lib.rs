@@ -2,7 +2,7 @@
 
 // What's left:
 // TODO Copy ZooDefs.java's content here
-// TODO Implement all operations
+// TODO Implement all operations as async
 // TODO Notify Watcher about state changes
 // TODO Write a lot of tests
 // TODO Handle zxid at reconnect
@@ -692,7 +692,7 @@ impl ZooKeeper {
         self.xid.fetch_add(1, SeqCst) as i32
     }
 
-    fn request<T: Archive>(&self, req: T, xid: i32, opcode: OpCode) -> Response {
+    fn request<T: Archive>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = MemWriter::new();
@@ -710,7 +710,7 @@ impl ZooKeeper {
     pub fn add_auth(&self, scheme: String, auth: Vec<u8>) -> ZkResult<()> {
         let req = AuthRequest{typ: 0, scheme: scheme, auth: auth};
 
-        let result = self.request(req, -4, Auth);
+        let result = self.request(Auth, -4, req);
 
         fetch_empty_result!(result, AuthResult)
     }
@@ -718,7 +718,7 @@ impl ZooKeeper {
     pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: path, data: data, acl: acl, flags: mode as i32};
 
-        let result = self.request(req, self.xid(), Create);
+        let result = self.request(Create, self.xid(), req);
 
         fetch_result!(result, CreateResult(path))
     }
@@ -726,7 +726,7 @@ impl ZooKeeper {
     pub fn delete(&self, path: String, version: i32) -> ZkResult<()> {
         let req = DeleteRequest{path: path, version: version};
 
-        let result = self.request(req, self.xid(), Delete);
+        let result = self.request(Delete, self.xid(), req);
 
         fetch_empty_result!(result, DeleteResult)
     }
@@ -734,7 +734,7 @@ impl ZooKeeper {
     pub fn exists(&self, path: String, watch: bool) -> ZkResult<Stat> {
         let req = ExistsRequest{path: path, watch: watch};
 
-        let result = self.request(req, self.xid(), Exists);
+        let result = self.request(Exists, self.xid(), req);
 
         fetch_result!(result, ExistsResult(stat))
     }
@@ -742,7 +742,7 @@ impl ZooKeeper {
     pub fn get_acl(&self, path: String) -> ZkResult<(Vec<Acl>, Stat)> {
         let req = GetAclRequest{path: path};
 
-        let result = self.request(req, self.xid(), GetAcl);
+        let result = self.request(GetAcl, self.xid(), req);
 
         fetch_result!(result, GetAclResult(acl_stat))
     }
@@ -750,7 +750,7 @@ impl ZooKeeper {
     pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: path, watch: watch};
 
-        let result = self.request(req, self.xid(), GetChildren);
+        let result = self.request(GetChildren, self.xid(), req);
 
         fetch_result!(result, GetChildrenResult(children))
     }
@@ -758,14 +758,15 @@ impl ZooKeeper {
     pub fn get_data(&self, path: String, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest{path: path, watch: watch};
 
-        let result = self.request(req, self.xid(), GetData);
+        let result = self.request(GetData, self.xid(), req);
 
         fetch_result!(result, GetDataResult(data_stat))
     }
 
     #[allow(unused_must_use)]
     pub fn close(&self) {
-        self.request(EmptyRequest, 0, CloseSession);
+        self.request(CloseSession, 0, EmptyRequest);
+
         self.running.store(false, SeqCst);
     }
 }
