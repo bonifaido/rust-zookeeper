@@ -119,7 +119,7 @@ impl ZooKeeper {
                                 Ok(packet) => packet,
                                 Err(_) => return
                             };
-                            let res = packet.data.write_into(&mut writer_sock);
+                            let res = packet.data.write_to(&mut writer_sock);
                             if res.is_err() {
                                 break;
                             }
@@ -128,7 +128,7 @@ impl ZooKeeper {
                         () = ping_timeout.recv() => {
                             println!("Pinging {}", writer_sock.peer_name());
                             let ping = RequestHeader{xid: -2, opcode: Ping as i32}.to_byte_vec();
-                            let res = ping.write_into(&mut writer_sock);
+                            let res = ping.write_to(&mut writer_sock);
                             if res.is_err() {
                                 println!("Failed to ping server");
                                 break;
@@ -211,7 +211,7 @@ impl ZooKeeper {
                     continue;
                 }
 
-                let write = conn_req.write_into(&mut sock);
+                let write = conn_req.write_to(&mut sock);
                 if write.is_err() {
                     continue;
                 }
@@ -240,8 +240,8 @@ impl ZooKeeper {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = MemWriter::new();
-        rh.write_into(&mut buf);
-        req.write_into(&mut buf);
+        rh.write_to(&mut buf);
+        req.write_to(&mut buf);
 
         let (resp_tx, resp_rx) = channel();
         let packet = Packet{opcode: opcode, data: buf.unwrap(), resp_tx: resp_tx};

@@ -13,25 +13,25 @@ pub fn read_string(reader: &mut Reader) -> String {
 }
 
 pub trait Archive {
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()>;
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()>;
 
     #[allow(unused_must_use)]
     fn to_byte_vec(&self) -> Vec<u8> {
         let mut w = MemWriter::new();
-        self.write_into(&mut w);
+        self.write_to(&mut w);
         w.unwrap()
     }
 }
 
 impl Archive for u8 {
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_u8(*self)
     }
 }
 
 impl Archive for String {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.len() as i32);
         writer.write_str(self.as_slice())
     }
@@ -39,11 +39,11 @@ impl Archive for String {
 
 impl<T: Archive> Archive for Vec<T> {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.len() as i32);
         let mut res = Ok(());
         for i in self.iter() {
-            res = i.write_into(writer)
+            res = i.write_to(writer)
         }
         res
     }
@@ -67,10 +67,10 @@ impl Acl {
 
 impl Archive for Acl {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.perms);
-        self.scheme.write_into(writer);
-        self.id.write_into(writer)
+        self.scheme.write_to(writer);
+        self.id.write_to(writer)
     }
 }
 
@@ -129,12 +129,12 @@ impl ConnectRequest {
 
 impl Archive for ConnectRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.protocol_version);
         writer.write_be_i64(self.last_zxid_seen);
         writer.write_be_i32(self.timeout);
         writer.write_be_i64(self.session_id);
-        self.passwd.write_into(writer);
+        self.passwd.write_to(writer);
         writer.write_u8(self.read_only as u8)
     }
 }
@@ -175,7 +175,7 @@ pub struct RequestHeader {
 
 impl Archive for RequestHeader {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.xid);
         writer.write_be_i32(self.opcode)
     }
@@ -206,10 +206,10 @@ pub struct CreateRequest {
 
 impl Archive for CreateRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
-        self.data.write_into(writer);
-        self.acl.write_into(writer);
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer);
+        self.data.write_to(writer);
+        self.acl.write_to(writer);
         writer.write_be_i32(self.flags)
     }
 }
@@ -231,8 +231,8 @@ pub struct DeleteRequest {
 
 impl Archive for DeleteRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer);
         writer.write_be_i32(self.version)
     }
 }
@@ -244,8 +244,8 @@ struct StringAndBoolRequest {
 
 impl Archive for StringAndBoolRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer);
         writer.write_u8(self.watch as u8)
     }
 }
@@ -268,8 +268,8 @@ pub struct GetAclRequest {
 
 impl Archive for GetAclRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer)
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer)
     }
 }
 
@@ -297,9 +297,9 @@ pub struct SetAclRequest {
 
 impl Archive for SetAclRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
-        self.acl.write_into(writer);
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer);
+        self.acl.write_to(writer);
         writer.write_be_i32(self.version as i32)
     }
 }
@@ -312,9 +312,9 @@ pub struct SetDataRequest {
 
 impl Archive for SetDataRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
-        self.path.write_into(writer);
-        self.data.write_into(writer);
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
+        self.path.write_to(writer);
+        self.data.write_to(writer);
         writer.write_be_i32(self.version as i32)
     }
 }
@@ -358,17 +358,17 @@ pub struct AuthRequest {
 
 impl Archive for AuthRequest {
     #[allow(unused_must_use)]
-    fn write_into(&self, writer: &mut Writer) -> IoResult<()> {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.typ);
-        self.scheme.write_into(writer);
-        self.auth.write_into(writer)
+        self.scheme.write_to(writer);
+        self.auth.write_to(writer)
     }
 }
 
 pub struct EmptyRequest;
 
 impl Archive for EmptyRequest {
-    fn write_into(&self, _: &mut Writer) -> IoResult<()> { Ok(()) }
+    fn write_to(&self, _: &mut Writer) -> IoResult<()> { Ok(()) }
 }
 
 #[deriving(Show)]
