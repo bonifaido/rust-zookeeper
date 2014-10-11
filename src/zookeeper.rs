@@ -39,6 +39,7 @@ enum OpCode {
     SetAcl = 7,
     GetChildren = 8,
     GetData = 4,
+    SetData = 5,
     Ping = 11,
     CloseSession = -11
 }
@@ -189,6 +190,7 @@ impl ZooKeeper {
                 SetAcl => SetAclResult(StatResponse::read_from(buf)),
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
                 GetData => GetDataResult(GetDataResponse::read_from(buf)),
+                SetData => SetDataResult(StatResponse::read_from(buf)),
                 opcode => fail!("{}Response not implemented yet", opcode)
             },
             e => {
@@ -310,6 +312,14 @@ impl ZooKeeper {
         let result = self.request(SetAcl, self.xid(), req);
 
         fetch_result!(result, SetAclResult(stat))
+    }
+
+    pub fn set_data(&self, path: String, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
+        let req = SetDataRequest{path: path, data: data, version: version};
+
+        let result = self.request(SetData, self.xid(), req);
+
+        fetch_result!(result, SetDataResult(stat))
     }
 
     #[allow(unused_must_use)]

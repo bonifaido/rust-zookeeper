@@ -86,26 +86,18 @@ pub struct Stat {
 
 impl Stat {
     fn read_from(reader: &mut Reader) -> Stat {
-        let mtime = reader.read_be_i64().unwrap();
-        let version = reader.read_be_i32().unwrap();
-        let cversion = reader.read_be_i32().unwrap();
-        let aversion = reader.read_be_i32().unwrap();
-        let ephemeral_owner = reader.read_be_i64().unwrap();
-        let data_length = reader.read_be_i32().unwrap();
-        let num_children = reader.read_be_i32().unwrap();
-        let pzxid = reader.read_be_i64().unwrap();
         Stat{
             czxid: reader.read_be_i64().unwrap(),
             mzxid: reader.read_be_i64().unwrap(),
             ctime: reader.read_be_i64().unwrap(),
-            mtime: mtime,
-            version: version,
-            cversion: cversion,
-            aversion: aversion,
-            ephemeral_owner: ephemeral_owner,
-            data_length: data_length,
-            num_children: num_children,
-            pzxid: pzxid}
+            mtime: reader.read_be_i64().unwrap(),
+            version: reader.read_be_i32().unwrap(),
+            cversion: reader.read_be_i32().unwrap(),
+            aversion: reader.read_be_i32().unwrap(),
+            ephemeral_owner: reader.read_be_i64().unwrap(),
+            data_length: reader.read_be_i32().unwrap(),
+            num_children: reader.read_be_i32().unwrap(),
+            pzxid: reader.read_be_i64().unwrap()}
     }
 }
 
@@ -162,17 +154,12 @@ impl ConnectResponse {
     }
 
     pub fn read_from(reader: &mut Reader) -> ConnectResponse {
-        let protocol_version = reader.read_be_i32().unwrap();
-        let timeout = reader.read_be_i32().unwrap();
-        let session_id = reader.read_be_i64().unwrap();
-        let passwd = read_buffer(reader).unwrap();
-        let read_only = reader.read_u8().unwrap() == 0;
         ConnectResponse{
-            protocol_version: protocol_version,
-            timeout: timeout,
-            session_id: session_id,
-            passwd: passwd,
-            read_only: read_only}
+            protocol_version: reader.read_be_i32().unwrap(),
+            timeout: reader.read_be_i32().unwrap(),
+            session_id: reader.read_be_i64().unwrap(),
+            passwd: read_buffer(reader).unwrap(),
+            read_only: reader.read_u8().unwrap() != 0}
     }
 }
 
@@ -203,19 +190,6 @@ impl ReplyHeader {
         let err = reader.read_be_i32().unwrap();
         ReplyHeader{xid: xid, zxid: zxid, err: err}
     }
-}
-
-pub enum Response {
-    AuthResult,
-    CloseResult,
-    CreateResult(CreateResponse),
-    DeleteResult,
-    ErrorResult(ZkError),
-    ExistsResult(StatResponse),
-    GetAclResult(GetAclResponse),
-    GetChildrenResult(GetChildrenResponse),
-    GetDataResult(GetDataResponse),
-    SetAclResult(StatResponse)
 }
 
 pub struct CreateRequest {
@@ -323,6 +297,21 @@ impl Archive for SetAclRequest {
     }
 }
 
+pub struct SetDataRequest {
+    pub path: String,
+    pub data: Vec<u8>,
+    pub version: i32
+}
+
+impl Archive for SetDataRequest {
+    #[allow(unused_must_use)]
+    fn write_into(&self, writer: &mut Writer) {
+        write_string(writer, &self.path);
+        write_buffer(writer, &self.data);
+        writer.write_be_i32(self.version as i32);
+    }
+}
+
 pub struct GetChildrenRequest {
     pub path: String,
     pub watch: bool
@@ -414,4 +403,18 @@ impl WatchedEvent {
             keeper_state: FromPrimitive::from_i32(state).unwrap(),
             path: path}
     }
+}
+
+pub enum Response {
+    AuthResult,
+    CloseResult,
+    CreateResult(CreateResponse),
+    DeleteResult,
+    ErrorResult(ZkError),
+    ExistsResult(StatResponse),
+    GetAclResult(GetAclResponse),
+    GetChildrenResult(GetChildrenResponse),
+    GetDataResult(GetDataResponse),
+    SetDataResult(StatResponse),
+    SetAclResult(StatResponse)
 }

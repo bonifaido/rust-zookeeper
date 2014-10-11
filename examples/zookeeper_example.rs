@@ -45,9 +45,13 @@ fn main() {
 
             println!("children of / -> {}", children);
 
-            let data = zk.get_data("/test".to_string(), true);
+            let set_data = zk.set_data("/test".to_string(), vec![6,5,4,3], -1);
 
-            println!("data -> {}", data);
+            println!("set_data -> {}", set_data);
+
+            let get_data = zk.get_data("/test".to_string(), true);
+
+            println!("get_data -> {}", get_data);
 
             let delete = zk.delete("/test".to_string(), -1);
 
