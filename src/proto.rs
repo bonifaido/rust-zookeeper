@@ -13,7 +13,7 @@ pub trait Archive {
     }
 }
 
-trait StringReader:Reader {
+trait StringReader: Reader {
     fn read_string(&mut self) -> IoResult<String>;
 }
 
