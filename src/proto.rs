@@ -2,17 +2,6 @@ use consts::{KeeperState, WatchedEventType, ZkError};
 use std::io::{IoResult, MemWriter, Reader, Writer};
 use std::time::Duration;
 
-pub trait Archive {
-    fn write_to(&self, writer: &mut Writer) -> IoResult<()>;
-
-    #[allow(unused_must_use)]
-    fn to_byte_vec(&self) -> Vec<u8> {
-        let mut w = MemWriter::new();
-        self.write_to(&mut w);
-        w.unwrap()
-    }
-}
-
 trait StringReader: Reader {
     fn read_string(&mut self) -> IoResult<String>;
 }
@@ -21,6 +10,18 @@ pub trait BufferReader: Reader {
     fn read_buffer(&mut self) -> IoResult<Vec<u8>>;
 }
 
+pub trait BufferWriter: Writer {
+    fn write_buffer(&mut self, buffer: &Vec<u8>) -> IoResult<()>;
+}
+
+impl<R: Reader> StringReader for R {
+    fn read_string(&mut self) -> IoResult<String> {
+        let raw = try!(self.read_buffer());
+        Ok(String::from_utf8(raw).unwrap())
+    }
+}
+
+// A buffer is an u8 string prefixed with it's length as u32
 impl<R: Reader> BufferReader for R {
     fn read_buffer(&mut self) -> IoResult<Vec<u8>> {
         let len = try!(self.read_be_i32());
@@ -28,10 +29,21 @@ impl<R: Reader> BufferReader for R {
     }
 }
 
-impl<R: Reader> StringReader for R {
-    fn read_string(&mut self) -> IoResult<String> {
-        let raw = try!(self.read_buffer());
-        Ok(String::from_utf8(raw).unwrap())
+impl<W: Writer> BufferWriter<> for W {
+    fn write_buffer(&mut self, buffer: &Vec<u8>) -> IoResult<()> {
+        try!(self.write_be_i32(buffer.len() as i32));
+        self.write(buffer.as_slice())
+    }
+}
+
+pub trait Archive {
+    fn write_to(&self, writer: &mut Writer) -> IoResult<()>;
+
+    #[allow(unused_must_use)]
+    fn to_byte_vec(&self) -> Vec<u8> {
+        let mut w = MemWriter::new();
+        self.write_to(&mut w);
+        w.unwrap()
     }
 }
 
@@ -401,16 +413,6 @@ impl WatchedEvent {
             path: path}
     }
 }
-
-// trait ArchiveWriter<A> {
-//     fn write(&mut self, a: A) -> IoResult<()>;
-// }
-
-// impl<'a, A: Archive> ArchiveWriter<A> for &'a mut Writer + 'a {
-//     fn write(&mut self, a: A) -> IoResult<()> {
-//         a.write_to(self)
-//     }
-// }
 
 pub enum Response {
     AuthResult,

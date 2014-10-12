@@ -119,7 +119,7 @@ impl ZooKeeper {
                                 Ok(packet) => packet,
                                 Err(_) => return
                             };
-                            let res = packet.data.write_to(&mut writer_sock);
+                            let res = writer_sock.write_buffer(&packet.data);
                             if res.is_err() {
                                 break;
                             }
@@ -128,7 +128,7 @@ impl ZooKeeper {
                         () = ping_timeout.recv() => {
                             println!("Pinging {}", writer_sock.peer_name());
                             let ping = RequestHeader{xid: -2, opcode: Ping as i32}.to_byte_vec();
-                            let res = ping.write_to(&mut writer_sock);
+                            let res = writer_sock.write_buffer(&ping);
                             if res.is_err() {
                                 println!("Failed to ping server");
                                 break;
@@ -211,7 +211,7 @@ impl ZooKeeper {
                     continue;
                 }
 
-                let write = conn_req.write_to(&mut sock);
+                let write = sock.write_buffer(&conn_req);
                 if write.is_err() {
                     continue;
                 }
