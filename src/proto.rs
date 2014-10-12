@@ -2,16 +2,6 @@ use consts::{KeeperState, WatchedEventType, ZkError};
 use std::io::{IoResult, MemWriter, Reader, Writer};
 use std::time::Duration;
 
-pub fn read_buffer(reader: &mut Reader) -> IoResult<Vec<u8>> {
-    let len = try!(reader.read_be_i32());
-    reader.read_exact(len as uint)
-}
-
-pub fn read_string(reader: &mut Reader) -> String {
-    let raw = read_buffer(reader).unwrap();
-    String::from_utf8(raw).unwrap()
-}
-
 pub trait Archive {
     fn write_to(&self, writer: &mut Writer) -> IoResult<()>;
 
@@ -20,6 +10,28 @@ pub trait Archive {
         let mut w = MemWriter::new();
         self.write_to(&mut w);
         w.unwrap()
+    }
+}
+
+trait StringReader:Reader {
+    fn read_string(&mut self) -> IoResult<String>;
+}
+
+pub trait BufferReader: Reader {
+    fn read_buffer(&mut self) -> IoResult<Vec<u8>>;
+}
+
+impl<R: Reader> BufferReader for R {
+    fn read_buffer(&mut self) -> IoResult<Vec<u8>> {
+        let len = try!(self.read_be_i32());
+        self.read_exact(len as uint)
+    }
+}
+
+impl<R: Reader> StringReader for R {
+    fn read_string(&mut self) -> IoResult<String> {
+        let raw = try!(self.read_buffer());
+        Ok(String::from_utf8(raw).unwrap())
     }
 }
 
@@ -57,10 +69,10 @@ pub struct Acl {
 }
 
 impl Acl {
-    fn read_from(reader: &mut Reader) -> Acl {
+    fn read_from<R: Reader>(reader: &mut R) -> Acl {
         let perms = reader.read_be_i32().unwrap();
-        let scheme = read_string(reader);
-        let id = read_string(reader);
+        let scheme = reader.read_string().unwrap();
+        let id = reader.read_string().unwrap();
         Acl{perms: perms, scheme: scheme, id: id}
     }
 }
@@ -158,12 +170,12 @@ impl ConnectResponse {
             read_only: false}
     }
 
-    pub fn read_from(reader: &mut Reader) -> ConnectResponse {
+    pub fn read_from<R: Reader>(reader: &mut R) -> ConnectResponse {
         ConnectResponse{
             protocol_version: reader.read_be_i32().unwrap(),
             timeout: reader.read_be_i32().unwrap(),
             session_id: reader.read_be_i64().unwrap(),
-            passwd: read_buffer(reader).unwrap(),
+            passwd: reader.read_buffer().unwrap(),
             read_only: reader.read_u8().unwrap() != 0}
     }
 }
@@ -219,8 +231,8 @@ pub struct CreateResponse {
 }
 
 impl CreateResponse {
-    pub fn read_from(reader: &mut Reader) -> CreateResponse {
-        CreateResponse{path: read_string(reader)}
+    pub fn read_from<R: Reader>(reader: &mut R) -> CreateResponse {
+        CreateResponse{path: reader.read_string().unwrap()}
     }
 }
 
@@ -278,7 +290,7 @@ pub struct GetAclResponse {
 }
 
 impl GetAclResponse {
-    pub fn read_from(reader: &mut Reader) -> GetAclResponse {
+    pub fn read_from<R: Reader>(reader: &mut R) -> GetAclResponse {
         let len = reader.read_be_i32().unwrap();
         let mut acl = Vec::new();
         for _ in range(0, len) {
@@ -326,11 +338,11 @@ pub struct GetChildrenResponse {
 }
 
 impl GetChildrenResponse {
-    pub fn read_from(reader: &mut Reader) -> GetChildrenResponse {
+    pub fn read_from<R: Reader>(reader: &mut R) -> GetChildrenResponse {
         let len = reader.read_be_i32().unwrap();
         let mut children = Vec::new();
         for _ in range(0, len) {
-            children.push(read_string(reader));
+            children.push(reader.read_string().unwrap());
         }
         GetChildrenResponse{children: children}
     }
@@ -343,8 +355,8 @@ pub struct GetDataResponse {
 }
 
 impl GetDataResponse {
-    pub fn read_from(reader: &mut Reader) -> GetDataResponse {
-        let data = read_buffer(reader).unwrap();
+    pub fn read_from<R: Reader>(reader: &mut R) -> GetDataResponse {
+        let data = reader.read_buffer().unwrap();
         let stat = Stat::read_from(reader);
         GetDataResponse{data_stat: (data, stat)}
     }
@@ -379,16 +391,26 @@ pub struct WatchedEvent {
 }
 
 impl WatchedEvent {
-    pub fn read_from(reader: &mut Reader) -> WatchedEvent {
+    pub fn read_from<R: Reader>(reader: &mut R) -> WatchedEvent {
         let typ = reader.read_be_i32().unwrap();
         let state = reader.read_be_i32().unwrap();
-        let path = read_string(reader);
+        let path = reader.read_string().unwrap();
         WatchedEvent{
             event_type: FromPrimitive::from_i32(typ).unwrap(),
             keeper_state: FromPrimitive::from_i32(state).unwrap(),
             path: path}
     }
 }
+
+// trait ArchiveWriter<A> {
+//     fn write(&mut self, a: A) -> IoResult<()>;
+// }
+
+// impl<'a, A: Archive> ArchiveWriter<A> for &'a mut Writer + 'a {
+//     fn write(&mut self, a: A) -> IoResult<()> {
+//         a.write_to(self)
+//     }
+// }
 
 pub enum Response {
     AuthResult,

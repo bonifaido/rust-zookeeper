@@ -172,13 +172,13 @@ impl ZooKeeper {
         Ok(ZooKeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
     }
 
-    fn read_reply(sock: &mut Reader) -> IoResult<(ReplyHeader, MemReader)> {
-        let buf = try!(read_buffer(sock));
+    fn read_reply<R: Reader>(sock: &mut R) -> IoResult<(ReplyHeader, MemReader)> {
+        let buf = try!(sock.read_buffer());
         let mut reader = MemReader::new(buf);
         Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 
-    fn parse_reply(err: i32, packet: &Packet, buf: &mut Reader) -> Response {
+    fn parse_reply<R: Reader>(err: i32, packet: &Packet, buf: &mut R) -> Response {
         match err {
             0 => match packet.opcode {
                 Auth => AuthResult,
@@ -216,7 +216,7 @@ impl ZooKeeper {
                     continue;
                 }
 
-                let read = read_buffer(&mut sock);
+                let read = sock.read_buffer();
                 if read.is_err() {
                     continue;
                 }
