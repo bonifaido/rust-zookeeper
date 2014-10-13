@@ -65,7 +65,7 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
-    pub fn new<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<ZooKeeper, &str> {
+    pub fn connect<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<ZooKeeper, &str> {
 
         // comminucating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
@@ -103,7 +103,7 @@ impl ZooKeeper {
             loop {
                 println!("connecting: trying to get new writer_sock");
                 let (new_writer_sock, new_conn_resp) = match running.load(SeqCst) {
-                    true => ZooKeeper::connect(&hosts, conn_resp),
+                    true => ZooKeeper::reconnect(&hosts, conn_resp),
                     false => return
                 };
                 writer_sock = new_writer_sock;
@@ -199,7 +199,7 @@ impl ZooKeeper {
         }
     }
 
-    fn connect(hosts: &Vec<SocketAddr>, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
+    fn reconnect(hosts: &Vec<SocketAddr>, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
         let conn_req = ConnectRequest::from(conn_resp, 0).to_byte_vec();
 
         loop {
