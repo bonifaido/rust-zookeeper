@@ -65,7 +65,7 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
-    pub fn connect<W: Watcher>(connect_string: &str, timeout: Duration, watcher: W) -> Result<ZooKeeper, &str> {
+    pub fn connect<'a, W: Watcher>(connect_string: String, timeout: Duration, watcher: W) -> Result<ZooKeeper, &'a str> {
 
         // comminucating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
@@ -79,7 +79,7 @@ impl ZooKeeper {
         let running = Arc::new(AtomicBool::new(true));
         let running1 = running.clone();
 
-        let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
+        let hosts = connect_string.as_slice().split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
         spawn(proc() {
             println!("event task started");

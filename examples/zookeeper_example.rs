@@ -12,7 +12,7 @@ impl Watcher for LoggingWatcher {
 }
 
 fn main() {
-    match ZooKeeper::connect("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
+    match ZooKeeper::connect("127.0.0.1:2181".to_string(), Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
             let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
             let acl2 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
