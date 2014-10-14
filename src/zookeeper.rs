@@ -65,9 +65,9 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
-    pub fn connect<'a, W: Watcher>(connect_string: String, timeout: Duration, watcher: W) -> Result<ZooKeeper, &'a str> {
+    pub fn connect<'a, W: Watcher>(connect_string: &'a str, timeout: Duration, watcher: W) -> Result<ZooKeeper, ()> {
 
-        // comminucating reader socket from writer to reader task
+        // communicating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
         // comminucating requests (as Packets) from instance methods to writer task
         let (packet_tx, packet_rx): (Sender<Packet>, Receiver<Packet>) = channel();
@@ -79,7 +79,7 @@ impl ZooKeeper {
         let running = Arc::new(AtomicBool::new(true));
         let running1 = running.clone();
 
-        let hosts = connect_string.as_slice().split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
+        let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
         spawn(proc() {
             println!("event task started");
@@ -251,72 +251,72 @@ impl ZooKeeper {
         resp_rx.recv()
     }
 
-    pub fn add_auth(&self, scheme: String, auth: Vec<u8>) -> ZkResult<()> {
-        let req = AuthRequest{typ: 0, scheme: scheme, auth: auth};
+    pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
+        let req = AuthRequest{typ: 0, scheme: scheme.to_string(), auth: auth};
 
         let result = self.request(Auth, -4, req);
 
         fetch_empty_result!(result, AuthResult)
     }
 
-    pub fn create(&self, path: String, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
-        let req = CreateRequest{path: path, data: data, acl: acl, flags: mode as i32};
+    pub fn create(&self, path: &str, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
+        let req = CreateRequest{path: path.to_string(), data: data, acl: acl, flags: mode as i32};
 
         let result = self.request(Create, self.xid(), req);
 
         fetch_result!(result, CreateResult(path))
     }
 
-    pub fn delete(&self, path: String, version: i32) -> ZkResult<()> {
-        let req = DeleteRequest{path: path, version: version};
+    pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
+        let req = DeleteRequest{path: path.to_string(), version: version};
 
         let result = self.request(Delete, self.xid(), req);
 
         fetch_empty_result!(result, DeleteResult)
     }
 
-    pub fn exists(&self, path: String, watch: bool) -> ZkResult<Stat> {
-        let req = ExistsRequest{path: path, watch: watch};
+    pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Stat> {
+        let req = ExistsRequest{path: path.to_string(), watch: watch};
 
         let result = self.request(Exists, self.xid(), req);
 
         fetch_result!(result, ExistsResult(stat))
     }
 
-    pub fn get_acl(&self, path: String) -> ZkResult<(Vec<Acl>, Stat)> {
-        let req = GetAclRequest{path: path};
+    pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
+        let req = GetAclRequest{path: path.to_string()};
 
         let result = self.request(GetAcl, self.xid(), req);
 
         fetch_result!(result, GetAclResult(acl_stat))
     }
 
-    pub fn get_children(&self, path: String, watch: bool) -> ZkResult<Vec<String>> {
-        let req = GetChildrenRequest{path: path, watch: watch};
+    pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
+        let req = GetChildrenRequest{path: path.to_string(), watch: watch};
 
         let result = self.request(GetChildren, self.xid(), req);
 
         fetch_result!(result, GetChildrenResult(children))
     }
 
-    pub fn get_data(&self, path: String, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
-        let req = GetDataRequest{path: path, watch: watch};
+    pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
+        let req = GetDataRequest{path: path.to_string(), watch: watch};
 
         let result = self.request(GetData, self.xid(), req);
 
         fetch_result!(result, GetDataResult(data_stat))
     }
 
-    pub fn set_acl(&self, path: String, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
-        let req = SetAclRequest{path: path, acl: acl, version: version};
+    pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
+        let req = SetAclRequest{path: path.to_string(), acl: acl, version: version};
 
         let result = self.request(SetAcl, self.xid(), req);
 
         fetch_result!(result, SetAclResult(stat))
     }
 
-    pub fn set_data(&self, path: String, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
-        let req = SetDataRequest{path: path, data: data, version: version};
+    pub fn set_data(&self, path: &str, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
+        let req = SetDataRequest{path: path.to_string(), data: data, version: version};
 
         let result = self.request(SetData, self.xid(), req);
 

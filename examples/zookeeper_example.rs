@@ -12,48 +12,48 @@ impl Watcher for LoggingWatcher {
 }
 
 fn main() {
-    match ZooKeeper::connect("127.0.0.1:2181".to_string(), Duration::seconds(5), LoggingWatcher) {
+    match ZooKeeper::connect("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher) {
         Ok(zk) => {
             let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
             let acl2 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
 
-            let auth = zk.add_auth("digest".to_string(), vec![1,2,3,4]);
+            let auth = zk.add_auth("digest", vec![1,2,3,4]);
 
             println!("authenticated -> {}", auth);
 
-            let path = zk.create("/test".to_string(), vec![1,2], acl1, Ephemeral);
+            let path = zk.create("/test", vec![1,2], acl1, Ephemeral);
 
             println!("created -> {}", path);
 
-            let exists = zk.exists("/test".to_string(), true);
+            let exists = zk.exists("/test", true);
 
             println!("exists -> {}", exists);
 
-            let dont_exists = zk.exists("/blabla".to_string(), true);
+            let dont_exists = zk.exists("/blabla", true);
 
             println!("don't exists path -> {}", dont_exists);
 
-            let get_acl = zk.get_acl("/test".to_string());
+            let get_acl = zk.get_acl("/test");
 
             println!("get_acl -> {}", get_acl);
 
-            let set_acl = zk.set_acl("/test".to_string(), acl2, -1);
+            let set_acl = zk.set_acl("/test", acl2, -1);
 
             println!("set_acl -> {}", set_acl);
 
-            let children = zk.get_children("/".to_string(), true);
+            let children = zk.get_children("/", true);
 
             println!("children of / -> {}", children);
 
-            let set_data = zk.set_data("/test".to_string(), vec![6,5,4,3], -1);
+            let set_data = zk.set_data("/test", vec![6,5,4,3], -1);
 
             println!("set_data -> {}", set_data);
 
-            let get_data = zk.get_data("/test".to_string(), true);
+            let get_data = zk.get_data("/test", true);
 
             println!("get_data -> {}", get_data);
 
-            let delete = zk.delete("/test".to_string(), -1);
+            let delete = zk.delete("/test", -1);
 
             println!("deleted /test -> {}", delete);
 
