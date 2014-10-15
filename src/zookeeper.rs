@@ -65,7 +65,7 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
-    pub fn connect<'a, W: Watcher>(connect_string: &'a str, timeout: Duration, watcher: W) -> Result<ZooKeeper, ()> {
+    pub fn connect<'a, W: Watcher>(connect_string: &'a str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper> {
 
         // communicating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
@@ -326,7 +326,6 @@ impl ZooKeeper {
     #[allow(unused_must_use)]
     pub fn close(&self) {
         self.request(CloseSession, 0, EmptyRequest);
-
         self.running.store(false, SeqCst);
     }
 }
