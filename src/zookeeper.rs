@@ -191,7 +191,7 @@ impl ZooKeeper {
                 GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
                 GetData => GetDataResult(GetDataResponse::read_from(buf)),
                 SetData => SetDataResult(StatResponse::read_from(buf)),
-                opcode => fail!("{}Response not implemented yet", opcode)
+                opcode => panic!("{}Response not implemented yet", opcode)
             },
             e => {
                 ErrorResult(FromPrimitive::from_i32(e).unwrap())
