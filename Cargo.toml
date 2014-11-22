@@ -3,3 +3,4 @@
 name = "zookeeper"
 version = "0.0.1"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
+description = "A minimal ZooKeeper client, work in progress"
