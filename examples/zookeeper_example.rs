@@ -60,7 +60,7 @@ fn zk_example() -> ZkResult<()> {
     println!("press enter to close client");
     std::io::stdin().read_line();
 
-    // Showing thet this client can be shared between tasks
+    // The client can be shared between tasks
     let zk2 = zk.clone();
     spawn(proc() {
         zk2.close();
