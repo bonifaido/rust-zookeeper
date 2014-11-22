@@ -9,10 +9,18 @@ Zookeeper client written 100% in Rust - Work in Progress
 Documentation is available at [rust-ci.org][doc]
 
 ## Usage
-The crate is called `zookeeper` and you can depend on it via cargo:
+
+Put this in your Cargo.toml:
+
 ```ini
 [dependencies.zookeeper]
 git = "https://github.com/bonifaido/rust-zookeeper.git"
+```
+
+And this in your crate root:
+
+```rust
+extern crate zookeeper;
 ```
 
 ## Examples
