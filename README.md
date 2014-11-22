@@ -27,4 +27,4 @@ extern crate zookeeper;
 Check the [examples][examples] directory
 
 [doc]: http://www.rust-ci.org/bonifaido/rust-zookeeper/doc/zookeeper
-[examples]: https://github.com/bonifaido/rust-zookeeper/examples
+[examples]: https://github.com/bonifaido/rust-zookeeper/tree/master/examples

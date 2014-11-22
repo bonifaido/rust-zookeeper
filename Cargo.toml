@@ -1,8 +1,10 @@
 [package]
 
 name = "zookeeper"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
+license = "MIT"
+homepage = "https://github.com/rust-lang/time"
+repository = "https://github.com/bonifaido/rust-zookeeper"
 description = "A minimal ZooKeeper client, work in progress"
 readme = "README.md"
-license = "MIT"
