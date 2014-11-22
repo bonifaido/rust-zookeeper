@@ -415,15 +415,15 @@ impl WatchedEvent {
 }
 
 pub enum Response {
-    AuthResult,
-    CloseResult,
-    CreateResult(CreateResponse),
-    DeleteResult,
-    ErrorResult(ZkError),
-    ExistsResult(StatResponse),
-    GetAclResult(GetAclResponse),
-    GetChildrenResult(GetChildrenResponse),
-    GetDataResult(GetDataResponse),
-    SetDataResult(StatResponse),
-    SetAclResult(StatResponse)
+    Auth,
+    Close,
+    Create(CreateResponse),
+    Delete,
+    Error(ZkError),
+    Exists(StatResponse),
+    GetAcl(GetAclResponse),
+    GetChildren(GetChildrenResponse),
+    GetData(GetDataResponse),
+    SetData(StatResponse),
+    SetAcl(StatResponse)
 }

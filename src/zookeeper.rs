@@ -10,21 +10,21 @@ use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
 use std::time::Duration;
 
 macro_rules! fetch_result(
-    ($res:ident, $enu:ident($item:ident)) => (
+    ($res:ident, $enu:ident::$hack:ident($item:ident)) => (
         match $res {
-            $enu(response) => Ok(response.$item),
-            ErrorResult(e) => Err(e),
-            _ => Err(SystemError)
+            $enu::$hack(response) => Ok(response.$item),
+            Response::Error(e) => Err(e),
+            _ => Err(ZkError::SystemError)
         }
     )
 )
 
 macro_rules! fetch_empty_result(
-    ($res:ident, $enu:ident) => (
+    ($res:ident, $enu:ident::$hack:ident) => (
         match $res {
-            $enu => Ok(()),
-            ErrorResult(e) => Err(e),
-            _ => Err(SystemError)
+            $enu::$hack => Ok(()),
+            Response::Error(e) => Err(e),
+            _ => Err(ZkError::SystemError)
         }
     )
 )
@@ -127,7 +127,7 @@ impl ZooKeeper {
                         },
                         () = ping_timeout.recv() => {
                             println!("Pinging {}", writer_sock.peer_name());
-                            let ping = RequestHeader{xid: -2, opcode: Ping as i32}.to_byte_vec();
+                            let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_byte_vec();
                             let res = writer_sock.write_buffer(&ping);
                             if res.is_err() {
                                 println!("Failed to ping server");
@@ -181,20 +181,20 @@ impl ZooKeeper {
     fn parse_reply<R: Reader>(err: i32, packet: &Packet, buf: &mut R) -> Response {
         match err {
             0 => match packet.opcode {
-                Auth => AuthResult,
-                CloseSession => CloseResult,
-                Create => CreateResult(CreateResponse::read_from(buf)),
-                Delete => DeleteResult,
-                Exists => ExistsResult(StatResponse::read_from(buf)),
-                GetAcl => GetAclResult(GetAclResponse::read_from(buf)),
-                SetAcl => SetAclResult(StatResponse::read_from(buf)),
-                GetChildren => GetChildrenResult(GetChildrenResponse::read_from(buf)),
-                GetData => GetDataResult(GetDataResponse::read_from(buf)),
-                SetData => SetDataResult(StatResponse::read_from(buf)),
+                OpCode::Auth => Response::Auth,
+                OpCode::CloseSession => Response::Close,
+                OpCode::Create => Response::Create(CreateResponse::read_from(buf)),
+                OpCode::Delete => Response::Delete,
+                OpCode::Exists => Response::Exists(StatResponse::read_from(buf)),
+                OpCode::GetAcl => Response::GetAcl(GetAclResponse::read_from(buf)),
+                OpCode::SetAcl => Response::SetAcl(StatResponse::read_from(buf)),
+                OpCode::GetChildren => Response::GetChildren(GetChildrenResponse::read_from(buf)),
+                OpCode::GetData => Response::GetData(GetDataResponse::read_from(buf)),
+                OpCode::SetData => Response::SetData(StatResponse::read_from(buf)),
                 opcode => panic!("{}Response not implemented yet", opcode)
             },
             e => {
-                ErrorResult(FromPrimitive::from_i32(e).unwrap())
+                Response::Error(FromPrimitive::from_i32(e).unwrap())
             }
         }
     }
@@ -254,78 +254,79 @@ impl ZooKeeper {
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
         let req = AuthRequest{typ: 0, scheme: scheme.to_string(), auth: auth};
 
-        let result = self.request(Auth, -4, req);
+        let result = self.request(OpCode::Auth, -4, req);
 
-        fetch_empty_result!(result, AuthResult)
+        fetch_empty_result!(result, Response::Auth)
     }
 
     pub fn create(&self, path: &str, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: path.to_string(), data: data, acl: acl, flags: mode as i32};
 
-        let result = self.request(Create, self.xid(), req);
+        let result = self.request(OpCode::Create, self.xid(), req);
 
-        fetch_result!(result, CreateResult(path))
+        fetch_result!(result, Response::Create(path))
     }
 
     pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
         let req = DeleteRequest{path: path.to_string(), version: version};
 
-        let result = self.request(Delete, self.xid(), req);
+        let result = self.request(OpCode::Delete, self.xid(), req);
 
-        fetch_empty_result!(result, DeleteResult)
+        fetch_empty_result!(result, Response::Delete)
     }
 
     pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Stat> {
         let req = ExistsRequest{path: path.to_string(), watch: watch};
 
-        let result = self.request(Exists, self.xid(), req);
+        let result = self.request(OpCode::Exists, self.xid(), req);
 
-        fetch_result!(result, ExistsResult(stat))
+        fetch_result!(result, Response::Exists(stat))
     }
 
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
         let req = GetAclRequest{path: path.to_string()};
 
-        let result = self.request(GetAcl, self.xid(), req);
+        let result = self.request(OpCode::GetAcl, self.xid(), req);
 
-        fetch_result!(result, GetAclResult(acl_stat))
+        fetch_result!(result, Response::GetAcl(acl_stat))
     }
 
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: path.to_string(), watch: watch};
 
-        let result = self.request(GetChildren, self.xid(), req);
+        let result = self.request(OpCode::GetChildren, self.xid(), req);
 
-        fetch_result!(result, GetChildrenResult(children))
+        fetch_result!(result, Response::GetChildren(children))
     }
 
     pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest{path: path.to_string(), watch: watch};
 
-        let result = self.request(GetData, self.xid(), req);
+        let result = self.request(OpCode::GetData, self.xid(), req);
 
-        fetch_result!(result, GetDataResult(data_stat))
+        fetch_result!(result, Response::GetData(data_stat))
     }
 
     pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
         let req = SetAclRequest{path: path.to_string(), acl: acl, version: version};
 
-        let result = self.request(SetAcl, self.xid(), req);
+        let result = self.request(OpCode::SetAcl, self.xid(), req);
 
-        fetch_result!(result, SetAclResult(stat))
+        fetch_result!(result, Response::SetAcl(stat))
     }
 
     pub fn set_data(&self, path: &str, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
         let req = SetDataRequest{path: path.to_string(), data: data, version: version};
 
-        let result = self.request(SetData, self.xid(), req);
+        let result = self.request(OpCode::SetData, self.xid(), req);
 
-        fetch_result!(result, SetDataResult(stat))
+        fetch_result!(result, Response::SetData(stat))
     }
 
     #[allow(unused_must_use)]
     pub fn close(&self) {
-        self.request(CloseSession, 0, EmptyRequest);
+        self.request(OpCode::CloseSession, 0, EmptyRequest);
+
         self.running.store(false, SeqCst);
     }
 }

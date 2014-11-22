@@ -1,7 +1,7 @@
 extern crate zookeeper;
 
 use std::time::Duration;
-use zookeeper::{Acl, Ephemeral, Watcher, WatchedEvent, ZkResult, ZooKeeper};
+use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZkResult, ZooKeeper};
 use zookeeper::perms;
 
 struct LoggingWatcher;
@@ -21,7 +21,7 @@ fn zk_example() -> ZkResult<()> {
 
     println!("authenticated -> {}", auth);
 
-    let path = zk.create("/test", vec![1,2], acl1, Ephemeral);
+    let path = zk.create("/test", vec![1,2], acl1, CreateMode::Ephemeral);
 
     println!("created -> {}", path);
 
