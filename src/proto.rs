@@ -43,7 +43,7 @@ pub trait Archive {
     fn to_byte_vec(&self) -> Vec<u8> {
         let mut w = MemWriter::new();
         self.write_to(&mut w);
-        w.unwrap()
+        w.into_inner()
     }
 }
 
@@ -98,6 +98,7 @@ impl Archive for Acl {
     }
 }
 
+#[allow(missing_copy_implementations)]
 #[deriving(Show)]
 pub struct Stat {
     pub czxid: i64,

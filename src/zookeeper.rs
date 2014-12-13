@@ -44,6 +44,8 @@ enum OpCode {
     CloseSession = -11
 }
 
+impl Copy for OpCode {}
+
 pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
 }
@@ -191,7 +193,7 @@ impl ZooKeeper {
                 OpCode::GetChildren => Response::GetChildren(GetChildrenResponse::read_from(buf)),
                 OpCode::GetData => Response::GetData(GetDataResponse::read_from(buf)),
                 OpCode::SetData => Response::SetData(StatResponse::read_from(buf)),
-                opcode => panic!("{}Response not implemented yet", opcode)
+                ref opcode => panic!("{}Response not implemented yet", opcode)
             },
             e => {
                 Response::Error(FromPrimitive::from_i32(e).unwrap())
@@ -244,7 +246,7 @@ impl ZooKeeper {
         req.write_to(&mut buf);
 
         let (resp_tx, resp_rx) = channel();
-        let packet = Packet{opcode: opcode, data: buf.unwrap(), resp_tx: resp_tx};
+        let packet = Packet{opcode: opcode, data: buf.into_inner(), resp_tx: resp_tx};
 
         self.packet_tx.send(packet);
 

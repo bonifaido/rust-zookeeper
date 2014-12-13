@@ -1,3 +1,4 @@
+#[allow(missing_copy_implementations)]
 #[deriving(FromPrimitive, Show)]
 pub enum ZkError {
     APIError = -100,
@@ -30,6 +31,7 @@ pub mod perms {
     pub const ALL: i32 = READ | WRITE | CREATE | DELETE | ADMIN;
 }
 
+#[allow(missing_copy_implementations)]
 pub enum CreateMode {
     Persistent,
     Ephemeral,
@@ -37,6 +39,7 @@ pub enum CreateMode {
     EphemeralSequential
 }
 
+#[allow(missing_copy_implementations)]
 #[deriving(FromPrimitive,Show)]
 pub enum KeeperState {
     Disconnected = 0,
@@ -47,6 +50,7 @@ pub enum KeeperState {
     Expired = -112
 }
 
+#[allow(missing_copy_implementations)]
 #[deriving(FromPrimitive,Show)]
 pub enum WatchedEventType {
     None = -1,
