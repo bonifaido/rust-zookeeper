@@ -62,7 +62,7 @@ fn zk_example() -> ZkResult<()> {
 
     // The client can be shared between tasks
     let zk2 = zk.clone();
-    spawn(proc() {
+    spawn(move || {
         zk2.close();
     });
 

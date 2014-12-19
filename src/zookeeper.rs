@@ -17,7 +17,7 @@ macro_rules! fetch_result(
             _ => Err(ZkError::SystemError)
         }
     )
-)
+);
 
 macro_rules! fetch_empty_result(
     ($res:ident, $enu:ident::$hack:ident) => (
@@ -27,7 +27,7 @@ macro_rules! fetch_empty_result(
             _ => Err(ZkError::SystemError)
         }
     )
-)
+);
 
 #[deriving(Show)]
 enum OpCode {
@@ -83,7 +83,7 @@ impl ZooKeeper {
 
         let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
 
-        spawn(proc() {
+        spawn(move || {
             println!("event task started");
 
             loop {
@@ -94,7 +94,7 @@ impl ZooKeeper {
             }
         });
 
-        spawn(proc() {
+        spawn(move || {
             println!("writer task started");
 
             let mut timer = Timer::new().unwrap();
@@ -141,7 +141,7 @@ impl ZooKeeper {
             }
         });
 
-        spawn(proc() {
+        spawn(move || {
             println!("reader task started");
 
             loop {
