@@ -1,6 +1,7 @@
 extern crate zookeeper;
 
 use std::time::Duration;
+use std::thread::Thread;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZkResult, ZooKeeper};
 use zookeeper::perms;
 
@@ -62,9 +63,9 @@ fn zk_example() -> ZkResult<()> {
 
     // The client can be shared between tasks
     let zk2 = zk.clone();
-    spawn(move || {
+    Thread::spawn(move || {
         zk2.close();
-    });
+    }).detach();
 
     println!("press enter to exit example");
     std::io::stdin().read_line();

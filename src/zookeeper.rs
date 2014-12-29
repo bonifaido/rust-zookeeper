@@ -8,6 +8,7 @@ use std::num::FromPrimitive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
 use std::time::Duration;
+use std::thread::Thread;
 
 macro_rules! fetch_result(
     ($res:ident, $enu:ident::$hack:ident($item:ident)) => (
@@ -81,9 +82,9 @@ impl ZooKeeper {
         let running = Arc::new(AtomicBool::new(true));
         let running1 = running.clone();
 
-        let hosts = connect_string.split(',').map(|host| from_str::<SocketAddr>(host).unwrap()).collect();
+        let hosts = connect_string.split(',').map(|host| host.parse::<SocketAddr>().unwrap()).collect();
 
-        spawn(move || {
+        Thread::spawn(move || {
             println!("event task started");
 
             loop {
@@ -92,9 +93,9 @@ impl ZooKeeper {
                     Err(_) => return
                 }
             }
-        });
+        }).detach();
 
-        spawn(move || {
+        Thread::spawn(move || {
             println!("writer task started");
 
             let mut timer = Timer::new().unwrap();
@@ -139,9 +140,9 @@ impl ZooKeeper {
                     };
                 }
             }
-        });
+        }).detach();
 
-        spawn(move || {
+        Thread::spawn(move || {
             println!("reader task started");
 
             loop {
@@ -169,7 +170,7 @@ impl ZooKeeper {
                     }
                 }
             }
-        });
+        }).detach();
 
         Ok(ZooKeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
     }
