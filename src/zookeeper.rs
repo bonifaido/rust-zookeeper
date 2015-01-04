@@ -7,6 +7,7 @@ use std::io::timer::Timer;
 use std::num::FromPrimitive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
+use std::sync::mpsc::{channel, Receiver, Sender, sync_channel};
 use std::time::Duration;
 use std::thread::Thread;
 
@@ -30,7 +31,7 @@ macro_rules! fetch_empty_result(
     )
 );
 
-#[deriving(Show)]
+#[derive(Show)]
 enum OpCode {
     Auth = 100,
     Create = 1,
@@ -59,7 +60,7 @@ struct Packet {
     resp_tx: Sender<Response>
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct ZooKeeper {
     xid: Arc<AtomicInt>,
     running: Arc<AtomicBool>,
@@ -85,10 +86,10 @@ impl ZooKeeper {
         let hosts = connect_string.split(',').map(|host| host.parse::<SocketAddr>().unwrap()).collect();
 
         Thread::spawn(move || {
-            println!("event task started");
+            println!("event thread started");
 
             loop {
-                match event_rx.recv_opt() {
+                match event_rx.recv() {
                     Ok(event) => watcher.handle(&event),
                     Err(_) => return
                 }
@@ -96,7 +97,7 @@ impl ZooKeeper {
         }).detach();
 
         Thread::spawn(move || {
-            println!("writer task started");
+            println!("writer thread started");
 
             let mut timer = Timer::new().unwrap();
             let ping_timeout = timer.periodic(timeout);
@@ -117,7 +118,7 @@ impl ZooKeeper {
                 loop {
                     // do we have something to send or do we need to ping?
                     select! {
-                        res = packet_rx.recv_opt() => {
+                        res = packet_rx.recv() => {
                             let packet = match res {
                                 Ok(packet) => packet,
                                 Err(_) => return
@@ -128,7 +129,7 @@ impl ZooKeeper {
                             }
                             written_tx.send(packet);
                         },
-                        () = ping_timeout.recv() => {
+                        _ = ping_timeout.recv() => {
                             println!("Pinging {}", writer_sock.peer_name());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_byte_vec();
                             let res = writer_sock.write_buffer(&ping);
@@ -143,11 +144,11 @@ impl ZooKeeper {
         }).detach();
 
         Thread::spawn(move || {
-            println!("reader task started");
+            println!("reader thread started");
 
             loop {
                 println!("connecting: trying to get new reader_sock");
-                let mut reader_sock = match reader_sock_rx.recv_opt() {
+                let mut reader_sock = match reader_sock_rx.recv() {
                     Ok(sock) => sock,
                     Err(_) => return
                 };
@@ -160,10 +161,10 @@ impl ZooKeeper {
                     }
                     let (reply_header, mut buf) = reply.unwrap();
                     match reply_header.xid {
-                        -1 => event_tx.send(WatchedEvent::read_from(&mut buf)),
+                        -1 => event_tx.send(WatchedEvent::read_from(&mut buf)).unwrap(),
                         -2 => println!("Got ping event"),
                         _xid => {
-                            let packet = written_rx.recv();
+                            let packet = written_rx.recv().unwrap();
                             let result = ZooKeeper::parse_reply(reply_header.err, &packet, &mut buf);
                             packet.resp_tx.send(result);
                          }
@@ -251,7 +252,7 @@ impl ZooKeeper {
 
         self.packet_tx.send(packet);
 
-        resp_rx.recv()
+        resp_rx.recv().unwrap()
     }
 
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {

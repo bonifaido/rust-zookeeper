@@ -1,4 +1,5 @@
 use consts::{KeeperState, WatchedEventType, ZkError};
+use std::num::FromPrimitive;
 use std::io::{IoResult, MemWriter, Reader, Writer};
 use std::time::Duration;
 
@@ -73,7 +74,7 @@ impl<T: Archive> Archive for Vec<T> {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct Acl {
     pub perms: i32,
     pub scheme: String,
@@ -99,7 +100,7 @@ impl Archive for Acl {
 }
 
 #[allow(missing_copy_implementations)]
-#[deriving(Show)]
+#[derive(Show)]
 pub struct Stat {
     pub czxid: i64,
     pub mzxid: i64,
@@ -164,7 +165,7 @@ impl Archive for ConnectRequest {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct ConnectResponse {
     protocol_version: i32,
     timeout: i32,
@@ -179,7 +180,7 @@ impl ConnectResponse {
             protocol_version: 0,
             timeout: timeout.num_milliseconds() as i32,
             session_id: 0,
-            passwd: [0, ..15].to_vec(),
+            passwd: Vec::from_elem(16, 0),
             read_only: false}
     }
 
@@ -206,7 +207,7 @@ impl Archive for RequestHeader {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct ReplyHeader {
     pub xid: i32,
     pub zxid: i64,
@@ -396,7 +397,7 @@ impl Archive for EmptyRequest {
     fn write_to(&self, _: &mut Writer) -> IoResult<()> { Ok(()) }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct WatchedEvent {
     pub event_type: WatchedEventType,
     pub keeper_state: KeeperState,

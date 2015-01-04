@@ -1,5 +1,5 @@
 #[allow(missing_copy_implementations)]
-#[deriving(FromPrimitive, Show)]
+#[derive(FromPrimitive, Show)]
 pub enum ZkError {
     APIError = -100,
     AuthFailed = -115,
@@ -40,7 +40,7 @@ pub enum CreateMode {
 }
 
 #[allow(missing_copy_implementations)]
-#[deriving(FromPrimitive,Show)]
+#[derive(FromPrimitive, Show)]
 pub enum KeeperState {
     Disconnected = 0,
     SyncConnected = 3,
@@ -51,7 +51,7 @@ pub enum KeeperState {
 }
 
 #[allow(missing_copy_implementations)]
-#[deriving(FromPrimitive,Show)]
+#[derive(FromPrimitive, Show)]
 pub enum WatchedEventType {
     None = -1,
     NodeCreated = 1,
