@@ -6,7 +6,7 @@ use std::io::net::ip::SocketAddr;
 use std::io::timer::Timer;
 use std::num::FromPrimitive;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicInt, SeqCst};
+use std::sync::atomic::{AtomicBool, AtomicInt, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, sync_channel};
 use std::time::Duration;
 use std::thread::Thread;
@@ -106,7 +106,7 @@ impl ZooKeeper {
 
             loop {
                 println!("connecting: trying to get new writer_sock");
-                let (new_writer_sock, new_conn_resp) = match running.load(SeqCst) {
+                let (new_writer_sock, new_conn_resp) = match running.load(Ordering::SeqCst) {
                     true => ZooKeeper::reconnect(&hosts, conn_resp),
                     false => return
                 };
@@ -236,7 +236,7 @@ impl ZooKeeper {
     }
 
     fn xid(&self) -> i32 {
-        self.xid.fetch_add(1, SeqCst) as i32
+        self.xid.fetch_add(1, Ordering::SeqCst) as i32
     }
 
     #[allow(unused_must_use)]
@@ -331,6 +331,6 @@ impl ZooKeeper {
     pub fn close(&self) {
         self.request(OpCode::CloseSession, 0, EmptyRequest);
 
-        self.running.store(false, SeqCst);
+        self.running.store(false, Ordering::SeqCst);
     }
 }

@@ -1,6 +1,7 @@
 use consts::{KeeperState, WatchedEventType, ZkError};
 use std::num::FromPrimitive;
 use std::io::{IoResult, MemWriter, Reader, Writer};
+use std::iter::repeat;
 use std::time::Duration;
 
 trait StringReader: Reader {
@@ -180,7 +181,7 @@ impl ConnectResponse {
             protocol_version: 0,
             timeout: timeout.num_milliseconds() as i32,
             session_id: 0,
-            passwd: Vec::from_elem(16, 0),
+            passwd: repeat(0).take(16).collect(),
             read_only: false}
     }
 
