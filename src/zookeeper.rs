@@ -113,6 +113,7 @@ impl ZooKeeper {
                 writer_sock = new_writer_sock;
                 conn_resp = new_conn_resp;
 
+                // pass a clone of the writer socket to the reader thread, will be used for reading
                 reader_sock_tx.send(writer_sock.clone());
 
                 loop {
