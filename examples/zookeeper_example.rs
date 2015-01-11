@@ -1,3 +1,4 @@
+#![allow(unstable)]
 extern crate zookeeper;
 
 use std::time::Duration;
