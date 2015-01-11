@@ -26,7 +26,7 @@ impl<R: Reader> StringReader for R {
 impl<R: Reader> BufferReader for R {
     fn read_buffer(&mut self) -> IoResult<Vec<u8>> {
         let len = try!(self.read_be_i32());
-        self.read_exact(len as uint)
+        self.read_exact(len as usize)
     }
 }
 

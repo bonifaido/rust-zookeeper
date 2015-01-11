@@ -94,7 +94,7 @@ impl ZooKeeper {
                     Err(_) => return
                 }
             }
-        }).detach();
+        });
 
         Thread::spawn(move || {
             println!("writer thread started");
@@ -131,7 +131,7 @@ impl ZooKeeper {
                             written_tx.send(packet);
                         },
                         _ = ping_timeout.recv() => {
-                            println!("Pinging {}", writer_sock.peer_name());
+                            println!("Pinging {}", writer_sock.peer_name().unwrap());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_byte_vec();
                             let res = writer_sock.write_buffer(&ping);
                             if res.is_err() {
@@ -142,7 +142,7 @@ impl ZooKeeper {
                     };
                 }
             }
-        }).detach();
+        });
 
         Thread::spawn(move || {
             println!("reader thread started");
@@ -157,7 +157,7 @@ impl ZooKeeper {
                 loop {
                     let reply = ZooKeeper::read_reply(&mut reader_sock);
                     if reply.is_err() {
-                        println!("ZooKeeper::read_reply {}", reply.err());
+                        println!("ZooKeeper::read_reply {:?}", reply.err());
                         break;
                     }
                     let (reply_header, mut buf) = reply.unwrap();
@@ -172,7 +172,7 @@ impl ZooKeeper {
                     }
                 }
             }
-        }).detach();
+        });
 
         Ok(ZooKeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
     }
@@ -196,7 +196,7 @@ impl ZooKeeper {
                 OpCode::GetChildren => Response::GetChildren(GetChildrenResponse::read_from(buf)),
                 OpCode::GetData => Response::GetData(GetDataResponse::read_from(buf)),
                 OpCode::SetData => Response::SetData(StatResponse::read_from(buf)),
-                ref opcode => panic!("{}Response not implemented yet", opcode)
+                ref opcode => panic!("{:?}Response not implemented yet", opcode)
             },
             e => {
                 Response::Error(FromPrimitive::from_i32(e).unwrap())
@@ -229,7 +229,7 @@ impl ZooKeeper {
                 let mut buf = MemReader::new(read.unwrap());
                 let conn_resp = ConnectResponse::read_from(&mut buf);
 
-                println!("{}", conn_resp);
+                println!("{:?}", conn_resp);
 
                 return (sock.unwrap(), conn_resp)
             }
