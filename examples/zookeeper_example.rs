@@ -60,16 +60,22 @@ fn zk_example() -> ZkResult<()> {
     println!("deleted /test -> {:?}", delete);
 
     println!("press enter to close client");
-    std::io::stdin().read_line();
+    std::io::stdin().read_line().unwrap();
 
     // The client can be shared between tasks
     let zk2 = zk.clone();
     Thread::spawn(move || {
         zk2.close();
+
+        // And operations return error after closed
+        match zk.exists("/test", false) {
+            Err(err) => println!("Usage after closed: {:?}", err),
+            Ok(_) => panic!("Shouldn't happen")
+        }
     });
 
     println!("press enter to exit example");
-    std::io::stdin().read_line();
+    std::io::stdin().read_line().unwrap();
 
     Ok(())
 }

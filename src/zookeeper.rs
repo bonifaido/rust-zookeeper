@@ -265,7 +265,6 @@ impl ZooKeeper {
         self.xid.fetch_add(1, Ordering::SeqCst) as i32
     }
 
-    #[allow(unused_must_use)]
     fn request<T: Archive>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
@@ -276,9 +275,12 @@ impl ZooKeeper {
         let (resp_tx, resp_rx) = channel();
         let packet = Packet{opcode: opcode, data: buf.into_inner(), resp_tx: resp_tx};
 
-        self.packet_tx.send(packet); // TODO check if this fails
+        self.packet_tx.send(packet);
 
-        resp_rx.recv().unwrap() // TODO check if this fails
+        match resp_rx.recv() {
+            Err(error) => Response::Error(ZkError::SystemError),
+            Ok(response) => response
+        }
     }
 
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
