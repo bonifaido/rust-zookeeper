@@ -79,6 +79,8 @@ impl ZooKeeper {
         let (written_tx, written_rx) = channel();
         // event channel for passing WatchedEvents to watcher on a seperate task
         let (event_tx, event_rx) = channel();
+        // event channel for passing WatchedEvents that the client should generate
+        let event_tx_manual = event_tx.clone();
 
         let running = Arc::new(AtomicBool::new(true));
         let running1 = running.clone();
@@ -121,6 +123,19 @@ impl ZooKeeper {
                     Err(_) => panic!("Writer: failed to pass new socket to reader thread"),
                     _ => ()
                 }
+
+                // Send Connected event through event thread to the user
+                let keeper_state = if conn_resp.read_only {
+                    KeeperState::ConnectedReadOnly
+                } else {
+                    KeeperState::SyncConnected
+                };
+                event_tx_manual.send(
+                    WatchedEvent{
+                        event_type: WatchedEventType::None,
+                        keeper_state: keeper_state,
+                        path: None}
+                ).unwrap();
 
                 loop {
                     // do we have something to send or do we need to ping?
@@ -278,7 +293,7 @@ impl ZooKeeper {
         self.packet_tx.send(packet);
 
         match resp_rx.recv() {
-            Err(error) => Response::Error(ZkError::SystemError),
+            Err(_) => Response::Error(ZkError::SystemError),
             Ok(response) => response
         }
     }

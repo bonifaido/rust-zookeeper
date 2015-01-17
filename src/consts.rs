@@ -44,7 +44,7 @@ pub enum CreateMode {
 pub enum KeeperState {
     Disconnected = 0,
     SyncConnected = 3,
-    KSAuthFailed = 4,
+    AuthFailed = 4,
     ConnectedReadOnly = 5,
     SaslAuthenticated = 6,
     Expired = -112

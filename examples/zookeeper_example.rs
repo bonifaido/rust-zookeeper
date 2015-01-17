@@ -16,6 +16,9 @@ impl Watcher for LoggingWatcher {
 fn zk_example() -> ZkResult<()> {
     let zk = try!(ZooKeeper::connect("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher));
 
+    println!("connecting... press enter to continue");
+    std::io::stdin().read_line().unwrap();
+
     let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
     let acl2 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
 

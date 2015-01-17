@@ -171,7 +171,7 @@ pub struct ConnectResponse {
     timeout: i32,
     session_id: i64,
     passwd: Vec<u8>,
-    read_only: bool
+    pub read_only: bool
 }
 
 impl ConnectResponse {
@@ -401,7 +401,7 @@ impl Archive for EmptyRequest {
 pub struct WatchedEvent {
     pub event_type: WatchedEventType,
     pub keeper_state: KeeperState,
-    pub path: String
+    pub path: Option<String>
 }
 
 impl WatchedEvent {
@@ -412,7 +412,7 @@ impl WatchedEvent {
         WatchedEvent{
             event_type: FromPrimitive::from_i32(typ).unwrap(),
             keeper_state: FromPrimitive::from_i32(state).unwrap(),
-            path: path}
+            path: Some(path)}
     }
 }
 
