@@ -2,11 +2,12 @@
 #![deny(unused_mut)]
 extern crate zookeeper;
 
-use std::time::Duration;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
 use std::io::{BufferedReader, Command, Process};
+use std::slice::SliceExt;
+use std::time::Duration;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -36,6 +37,7 @@ fn get_connect_string(server: &mut Process) -> String {
 
 #[test]
 fn simple_integration_test() {
+
     // Create a test cluster and obtain its connection string
     let mut server = start_zk();
     let connect_string = get_connect_string(&mut server);
@@ -43,19 +45,28 @@ fn simple_integration_test() {
     // Connect to the test cluster
     let client = ZooKeeper::connect(connect_string.as_slice(), Duration::seconds(5), LoggingWatcher).unwrap();
 
+
     // Do the tests
     let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
     let create = client.create("/test", vec![8,8], acl1, CreateMode::Ephemeral);
 
     assert_eq!(create.ok(), Some("/test".to_string()));
 
+
     let exists = client.exists("/test", true);
 
     assert!(exists.is_ok());
 
+
     let children = client.get_children("/", true);
 
-    assert_eq!(children.ok(), Some(vec!["zookeeper".to_string(), "test".to_string()]));
+    assert!(children.is_ok());
+
+    let mut sorted_children = children.unwrap();
+    sorted_children.sort();
+
+    assert_eq!(sorted_children, vec!["test".to_string(), "zookeeper".to_string()]);
+
 
     // After closing the client all operations return Err
     client.close();
@@ -63,6 +74,7 @@ fn simple_integration_test() {
     let exists = client.exists("/test", true);
 
     assert!(exists.is_err());
+
 
     // Close the server
     server.signal_exit().unwrap();
