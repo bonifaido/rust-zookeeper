@@ -1,4 +1,5 @@
 #![allow(unstable)]
+#![deny(unused_mut)]
 
 pub use consts::*;
 pub use proto::{Acl, Stat, WatchedEvent};

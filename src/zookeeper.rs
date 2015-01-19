@@ -178,7 +178,7 @@ impl ZooKeeper {
         });
 
         Thread::spawn(move || {
-            println!("Reader thread started");
+            println!("Reader: thread started");
 
             loop {
                 println!("Reader: connecting, trying to get new reader_sock");
