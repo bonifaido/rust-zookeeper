@@ -1,5 +1,7 @@
+use std::fmt;
+
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Show)]
+#[derive(FromPrimitive, Debug)]
 pub enum ZkError {
     APIError = -100,
     AuthFailed = -115,
@@ -22,6 +24,13 @@ pub enum ZkError {
     Unimplemented = -6
 }
 
+// TODO For me this is ugly compared to the previous #[derive(Show)]
+impl fmt::Display for ZkError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self)
+    }
+}
+
 pub mod perms {
     pub const READ: i32 = 1 << 0;
     pub const WRITE: i32 = 1 << 1;
@@ -40,7 +49,7 @@ pub enum CreateMode {
 }
 
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Show)]
+#[derive(FromPrimitive, Debug)]
 pub enum KeeperState {
     Disconnected = 0,
     SyncConnected = 3,
@@ -51,7 +60,7 @@ pub enum KeeperState {
 }
 
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Show)]
+#[derive(FromPrimitive, Debug)]
 pub enum WatchedEventType {
     None = -1,
     NodeCreated = 1,

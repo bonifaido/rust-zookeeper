@@ -31,7 +31,7 @@ macro_rules! fetch_empty_result(
     )
 );
 
-#[derive(Show)]
+#[derive(Debug)]
 enum OpCode {
     Auth = 100,
     Create = 1,

@@ -74,7 +74,7 @@ impl<T: Archive> Archive for Vec<T> {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct Acl {
     pub perms: i32,
     pub scheme: String,
@@ -100,7 +100,7 @@ impl Archive for Acl {
 }
 
 #[allow(missing_copy_implementations)]
-#[derive(Show)]
+#[derive(Debug)]
 pub struct Stat {
     pub czxid: i64,
     pub mzxid: i64,
@@ -165,7 +165,7 @@ impl Archive for ConnectRequest {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct ConnectResponse {
     protocol_version: i32,
     timeout: i32,
@@ -207,7 +207,7 @@ impl Archive for RequestHeader {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct ReplyHeader {
     pub xid: i32,
     pub zxid: i64,
@@ -397,7 +397,7 @@ impl Archive for EmptyRequest {
     fn write_to(&self, _: &mut Writer) -> IoResult<()> { Ok(()) }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct WatchedEvent {
     pub event_type: WatchedEventType,
     pub keeper_state: KeeperState,
