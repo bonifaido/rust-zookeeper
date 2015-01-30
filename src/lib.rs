@@ -1,4 +1,4 @@
-#![allow(unstable)]
+#![feature(collections, core, io, std_misc)]
 #![deny(unused_mut)]
 
 pub use consts::*;

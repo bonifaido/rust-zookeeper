@@ -28,3 +28,12 @@ Check the [examples][examples] directory
 
 [doc]: http://www.rust-ci.org/bonifaido/rust-zookeeper/doc/zookeeper
 [examples]: https://github.com/bonifaido/rust-zookeeper/tree/master/examples
+
+## Build and develop
+```shell
+cd zk-test-cluster
+mvn clean package
+cd ..
+cargo clean
+cargo test
+```

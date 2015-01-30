@@ -1,11 +1,11 @@
-#![allow(unstable)]
+#![feature(collections, core, io, std_misc)]
 #![deny(unused_mut)]
 extern crate zookeeper;
 
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
-use std::io::{BufferedReader, Command, Process};
+use std::old_io::{BufferedReader, Command, Process};
 use std::slice::SliceExt;
 use std::time::Duration;
 

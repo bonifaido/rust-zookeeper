@@ -1,9 +1,9 @@
 use consts::*;
 use proto::*;
 
-use std::io::{IoResult, MemReader, MemWriter, TcpStream};
-use std::io::net::ip::SocketAddr;
-use std::io::timer::Timer;
+use std::old_io::{IoResult, MemReader, MemWriter, TcpStream};
+use std::old_io::net::ip::SocketAddr;
+use std::old_io::timer::Timer;
 use std::num::FromPrimitive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, Ordering};

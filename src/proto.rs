@@ -1,6 +1,6 @@
 use consts::{KeeperState, WatchedEventType, ZkError};
 use std::num::FromPrimitive;
-use std::io::{IoResult, MemWriter, Reader, Writer};
+use std::old_io::{IoResult, MemWriter, Reader, Writer};
 use std::time::Duration;
 
 trait StringReader: Reader {
@@ -33,7 +33,7 @@ impl<R: Reader> BufferReader for R {
 impl<W: Writer> BufferWriter<> for W {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> IoResult<()> {
         try!(self.write_be_i32(buffer.len() as i32));
-        self.write(buffer.as_slice())
+        self.write_all(buffer.as_slice())
     }
 }
 
