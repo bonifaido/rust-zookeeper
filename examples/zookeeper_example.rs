@@ -1,4 +1,4 @@
-#![feature(collections, io, std_misc)]
+#![feature(io, std_misc)]
 extern crate zookeeper;
 
 use std::time::Duration;

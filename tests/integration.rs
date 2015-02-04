@@ -1,4 +1,4 @@
-#![feature(collections, core, io, std_misc)]
+#![feature(core, io, std_misc)]
 #![deny(unused_mut)]
 extern crate zookeeper;
 
