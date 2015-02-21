@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicInt, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, sync_channel};
 use std::time::Duration;
-use std::thread::Thread;
+use std::thread;
 
 macro_rules! fetch_result(
     ($res:ident, $enu:ident::$hack:ident($item:ident)) => (
@@ -69,7 +69,7 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
-    pub fn connect<'a, W: Watcher>(connect_string: &'a str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper> {
+    pub fn connect<'a, W: 'static + Watcher>(connect_string: &'a str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper> {
 
         // communicating reader socket from writer to reader task
         let (reader_sock_tx, reader_sock_rx) = sync_channel(0);
@@ -87,7 +87,7 @@ impl ZooKeeper {
 
         let hosts = connect_string.split(',').map(|host| host.parse::<SocketAddr>().unwrap()).collect();
 
-        Thread::spawn(move || {
+        thread::spawn(move || {
             println!("Event: thread started");
 
             loop {
@@ -98,7 +98,7 @@ impl ZooKeeper {
             }
         });
 
-        Thread::spawn(move || {
+        thread::spawn(move || {
             println!("Writer: thread started");
 
             let mut timer = Timer::new().unwrap();
@@ -177,7 +177,7 @@ impl ZooKeeper {
             }
         });
 
-        Thread::spawn(move || {
+        thread::spawn(move || {
             println!("Reader: thread started");
 
             loop {

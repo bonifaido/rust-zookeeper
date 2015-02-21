@@ -1,4 +1,4 @@
-#![feature(core, io, std_misc)]
+#![feature(core, old_io, io, std_misc)]
 #![deny(unused_mut)]
 
 pub use consts::*;
