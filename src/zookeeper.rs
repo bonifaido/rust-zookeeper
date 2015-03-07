@@ -6,8 +6,8 @@ use std::old_io::net::ip::SocketAddr;
 use std::old_io::timer::Timer;
 use std::num::FromPrimitive;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicInt, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender, sync_channel};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender, SyncSender, sync_channel};
 use std::time::Duration;
 use std::thread;
 
@@ -57,12 +57,12 @@ pub type ZkResult<T> = Result<T, ZkError>;
 struct Packet {
     opcode: OpCode,
     data: Vec<u8>,
-    resp_tx: Sender<Response>
+    resp_tx: SyncSender<Response>
 }
 
 #[derive(Clone)]
 pub struct ZooKeeper {
-    xid: Arc<AtomicInt>,
+    xid: Arc<AtomicIsize>,
     running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer task
 }
@@ -214,7 +214,7 @@ impl ZooKeeper {
             }
         });
 
-        Ok(ZooKeeper{xid: Arc::new(AtomicInt::new(1)), running: running1, packet_tx: packet_tx})
+        Ok(ZooKeeper{xid: Arc::new(AtomicIsize::new(1)), running: running1, packet_tx: packet_tx})
     }
 
     fn read_reply<R: Reader>(sock: &mut R) -> IoResult<(ReplyHeader, MemReader)> {
@@ -284,13 +284,16 @@ impl ZooKeeper {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = MemWriter::new();
-        rh.write_to(&mut buf);
-        req.write_to(&mut buf);
+        let _ = rh.write_to(&mut buf);
+        let _ = req.write_to(&mut buf);
 
-        let (resp_tx, resp_rx) = channel();
+        let (resp_tx, resp_rx) = sync_channel(0);
         let packet = Packet{opcode: opcode, data: buf.into_inner(), resp_tx: resp_tx};
 
-        self.packet_tx.send(packet);
+        if self.packet_tx.send(packet).is_err() {
+            // writer thread died
+            return Response::Error(ZkError::SystemError)
+        }
 
         match resp_rx.recv() {
             Err(_) => Response::Error(ZkError::SystemError),
