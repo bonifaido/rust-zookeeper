@@ -6,7 +6,6 @@ use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
 use std::old_io::{BufferedReader, Command, Process};
-use std::slice::SliceExt;
 use std::time::Duration;
 
 struct LoggingWatcher;
