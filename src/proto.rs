@@ -307,7 +307,7 @@ impl GetAclResponse {
     pub fn read_from<R: Reader>(reader: &mut R) -> GetAclResponse {
         let len = reader.read_be_i32().unwrap();
         let mut acl = Vec::new();
-        for _ in range(0, len) {
+        for _ in 0..len {
             acl.push(Acl::read_from(reader));
         }
         let stat = Stat::read_from(reader);
@@ -355,7 +355,7 @@ impl GetChildrenResponse {
     pub fn read_from<R: Reader>(reader: &mut R) -> GetChildrenResponse {
         let len = reader.read_be_i32().unwrap();
         let mut children = Vec::new();
-        for _ in range(0, len) {
+        for _ in 0..len {
             children.push(reader.read_string().unwrap());
         }
         GetChildrenResponse{children: children}
