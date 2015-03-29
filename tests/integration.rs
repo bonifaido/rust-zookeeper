@@ -5,7 +5,7 @@ extern crate zookeeper;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
-use std::old_io::{BufferedReader, Command, Process};
+use std::old_io::{Buffer, BufferedReader, Command, Process};
 use std::time::Duration;
 
 struct LoggingWatcher;
@@ -26,8 +26,8 @@ fn start_zk() -> Process {
 }
 
 fn get_connect_string(server: &mut Process) -> String {
-    let reader = server.stdout.take().unwrap();
-    let mut reader = BufferedReader::new(reader);
+    let stdout = server.stdout.take().unwrap();
+    let mut reader = BufferedReader::new(stdout);
 
     let mut connect_string = reader.read_line().unwrap();
     connect_string.pop(); // remove '\n'

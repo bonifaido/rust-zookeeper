@@ -1,7 +1,7 @@
 use consts::*;
 use proto::*;
 
-use std::old_io::{IoResult, MemReader, MemWriter, TcpStream};
+use std::old_io::{IoResult, MemReader, MemWriter, Reader, TcpStream};
 use std::old_io::net::ip::SocketAddr;
 use std::old_io::timer::Timer;
 use std::num::FromPrimitive;
