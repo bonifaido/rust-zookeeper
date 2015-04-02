@@ -1,9 +1,9 @@
-#![feature(old_io, std_misc)]
+#![feature(std_misc)]
 extern crate zookeeper;
 
 use std::time::Duration;
 use std::thread;
-use std::old_io as io;
+use std::io;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZkResult, ZooKeeper};
 use zookeeper::perms;
 
@@ -17,8 +17,9 @@ impl Watcher for LoggingWatcher {
 fn zk_example() -> ZkResult<()> {
     let zk = try!(ZooKeeper::connect("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher));
 
-    println!("connecting... press enter to continue");
-    io::stdin().read_line().unwrap();
+    let mut tmp = String::new();
+    println!("connecting... press any to continue");
+    io::stdin().read_line(&mut tmp).unwrap();
 
     let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
     let acl2 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
@@ -64,7 +65,7 @@ fn zk_example() -> ZkResult<()> {
     println!("deleted /test -> {:?}", delete);
 
     println!("press enter to close client");
-    io::stdin().read_line().unwrap();
+    io::stdin().read_line(&mut tmp).unwrap();
 
     // The client can be shared between tasks
     let zk2 = zk.clone();
@@ -79,7 +80,7 @@ fn zk_example() -> ZkResult<()> {
     });
 
     println!("press enter to exit example");
-    io::stdin().read_line().unwrap();
+    io::stdin().read_line(&mut tmp).unwrap();
 
     Ok(())
 }
