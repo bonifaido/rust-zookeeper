@@ -33,7 +33,7 @@ impl<R: Reader> BufferReader for R {
 impl<W: Writer> BufferWriter<> for W {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> IoResult<()> {
         try!(self.write_be_i32(buffer.len() as i32));
-        self.write_all(buffer.as_slice())
+        self.write_all(buffer.as_ref())
     }
 }
 
@@ -58,7 +58,7 @@ impl Archive for String {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Writer) -> IoResult<()> {
         writer.write_be_i32(self.len() as i32);
-        writer.write_str(self.as_slice())
+        writer.write_str(self.as_ref())
     }
 }
 
