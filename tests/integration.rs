@@ -1,11 +1,12 @@
-#![feature(old_io, std_misc)]
+#![feature(std_misc)]
 #![deny(unused_mut)]
 extern crate zookeeper;
 
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
-use std::old_io::{Buffer, BufferedReader, Command, Process};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 struct LoggingWatcher;
@@ -15,21 +16,24 @@ impl Watcher for LoggingWatcher {
     }
 }
 
-fn start_zk() -> Process {
+fn start_zk() -> Child {
     match Command::new("java")
             .arg("-jar")
             .arg("zk-test-cluster/target/main.jar")
+            .stdout(Stdio::piped())
             .spawn() {
         Ok(p) => p,
         Err(e) => panic!("failed to execute process: {}", e),
     }
 }
 
-fn get_connect_string(server: &mut Process) -> String {
-    let stdout = server.stdout.take().unwrap();
-    let mut reader = BufferedReader::new(stdout);
+fn get_connect_string(server: &mut Child) -> String {
+    let mut reader = BufReader::new(server.stdout.as_mut().unwrap());
 
-    let mut connect_string = reader.read_line().unwrap();
+    let mut connect_string = String::new();
+    if reader.read_line(&mut connect_string).is_err() {
+        panic!("Couldn't read ZK connect_string")
+    }
     connect_string.pop(); // remove '\n'
     connect_string
 }
@@ -76,5 +80,5 @@ fn simple_integration_test() {
 
 
     // Close the server
-    server.signal_exit().unwrap();
+    server.kill().unwrap();
 }
