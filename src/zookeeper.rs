@@ -31,7 +31,7 @@ macro_rules! fetch_empty_result(
     )
 );
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum OpCode {
     Auth = 100,
     Create = 1,
@@ -45,8 +45,6 @@ enum OpCode {
     Ping = 11,
     CloseSession = -11
 }
-
-impl Copy for OpCode {}
 
 pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
