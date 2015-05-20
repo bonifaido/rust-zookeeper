@@ -7,8 +7,5 @@ script:
   - cd zk-test-cluster && mvn clean package && cd -
   - cargo test --verbose
   - cargo doc --verbose
-after_script:
-  - cd target
-  - (curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh)
 sudo: false
 # as per http://blog.travis-ci.com/2014-12-17-faster-builds-with-container-based-infrastructure/
