@@ -14,7 +14,7 @@ Put this in your Cargo.toml:
 
 ```ini
 [dependencies.zookeeper]
-git = "https://github.com/bonifaido/rust-zookeeper.git"
+git = "0.1.0"
 ```
 
 And this in your crate root:
