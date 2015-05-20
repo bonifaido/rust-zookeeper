@@ -27,12 +27,9 @@ impl<R: Read> StringReader for R {
 impl<R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = try!(self.read_i32::<BigEndian>()) as usize;
-        let mut buf = Vec::with_capacity(len); // TODO I can't believe this
-        for _ in 0..len {
-            buf.push(0);
-        }
-        let read = self.read(&mut buf[..]);
-        if read.unwrap() == len {
+        let mut buf = vec![0; len];
+        let read = try!(self.read(&mut buf[..]));
+        if read == len {
             Ok(buf)
         } else {
             Err(Error::new(ErrorKind::Other, "read_buffer failed"))
@@ -43,7 +40,7 @@ impl<R: Read> BufferReader for R {
 impl<W: Write> BufferWriter<> for W {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()> {
         try!(self.write_i32::<BigEndian>(buffer.len() as i32));
-        self.write_all(buffer.as_ref())
+        self.write_all(buffer)
     }
 }
 
@@ -53,14 +50,14 @@ pub trait Archive {
     #[allow(unused_must_use)]
     fn to_byte_vec(&self) -> Vec<u8> {
         let mut w = Vec::new();
-        self.write_to(&mut w);
+        self.write_to(&mut w); // should never fail
         w
     }
 }
 
 impl Archive for u8 {
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_u8(*self);
+        try!(writer.write_u8(*self));
         Ok(())
     }
 }
@@ -68,7 +65,7 @@ impl Archive for u8 {
 impl Archive for String {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_i32::<BigEndian>(self.len() as i32);
+        try!(writer.write_i32::<BigEndian>(self.len() as i32));
         writer.write_all(self.as_ref())
     }
 }
@@ -76,10 +73,13 @@ impl Archive for String {
 impl<T: Archive> Archive for Vec<T> {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_i32::<BigEndian>(self.len() as i32);
+        try!(writer.write_i32::<BigEndian>(self.len() as i32));
         let mut res = Ok(());
-        for i in self.iter() {
-            res = i.write_to(writer)
+        for elem in self.iter() {
+            res = elem.write_to(writer);
+            if res.is_err() {
+                return res
+            }
         }
         res
     }
@@ -104,8 +104,8 @@ impl Acl {
 impl Archive for Acl {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_i32::<BigEndian>(self.perms);
-        self.scheme.write_to(writer);
+        try!(writer.write_i32::<BigEndian>(self.perms));
+        try!(self.scheme.write_to(writer));
         self.id.write_to(writer)
     }
 }
@@ -167,13 +167,13 @@ impl ConnectRequest {
 impl Archive for ConnectRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_i32::<BigEndian>(self.protocol_version);
-        writer.write_i64::<BigEndian>(self.last_zxid_seen);
-        writer.write_i32::<BigEndian>(self.timeout);
-        writer.write_i64::<BigEndian>(self.session_id);
-        self.passwd.write_to(writer);
-        writer.write_u8(self.read_only as u8);
-        Ok(()) // TODO
+        try!(writer.write_i32::<BigEndian>(self.protocol_version));
+        try!(writer.write_i64::<BigEndian>(self.last_zxid_seen));
+        try!(writer.write_i32::<BigEndian>(self.timeout));
+        try!(writer.write_i64::<BigEndian>(self.session_id));
+        try!(self.passwd.write_to(writer));
+        try!(writer.write_u8(self.read_only as u8));
+        Ok(())
     }
 }
 
@@ -214,8 +214,8 @@ pub struct RequestHeader {
 impl Archive for RequestHeader {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_i32::<BigEndian>(self.xid);
-        writer.write_i32::<BigEndian>(self.opcode);
+        try!(writer.write_i32::<BigEndian>(self.xid));
+        try!(writer.write_i32::<BigEndian>(self.opcode));
         Ok(())
     }
 }
@@ -246,10 +246,10 @@ pub struct CreateRequest {
 impl Archive for CreateRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        self.path.write_to(writer);
-        self.data.write_to(writer);
-        self.acl.write_to(writer);
-        writer.write_i32::<BigEndian>(self.flags);
+        try!(self.path.write_to(writer));
+        try!(self.data.write_to(writer));
+        try!(self.acl.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.flags));
         Ok(())
     }
 }
@@ -272,9 +272,9 @@ pub struct DeleteRequest {
 impl Archive for DeleteRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        self.path.write_to(writer);
-        writer.write_i32::<BigEndian>(self.version);
-        Ok(()) // TODO just to fulfill the IO API
+        try!(self.path.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.version));
+        Ok(())
     }
 }
 
@@ -286,9 +286,9 @@ struct StringAndBoolRequest {
 impl Archive for StringAndBoolRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        self.path.write_to(writer);
-        writer.write_u8(self.watch as u8);
-        Ok(()) // TODO
+        try!(self.path.write_to(writer));
+        try!(writer.write_u8(self.watch as u8));
+        Ok(())
     }
 }
 
@@ -340,10 +340,10 @@ pub struct SetAclRequest {
 impl Archive for SetAclRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        self.path.write_to(writer);
-        self.acl.write_to(writer);
-        writer.write_i32::<BigEndian>(self.version);
-        Ok(()) // TODO
+        try!(self.path.write_to(writer));
+        try!(self.acl.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.version));
+        Ok(())
     }
 }
 
@@ -356,9 +356,9 @@ pub struct SetDataRequest {
 impl Archive for SetDataRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        self.path.write_to(writer);
-        self.data.write_to(writer);
-        writer.write_i32::<BigEndian>(self.version);
+        try!(self.path.write_to(writer));
+        try!(self.data.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.version));
         Ok(())
     }
 }
