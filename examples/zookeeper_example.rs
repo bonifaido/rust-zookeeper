@@ -1,4 +1,4 @@
-#![feature(std_misc)]
+#![feature(duration)]
 extern crate zookeeper;
 
 use std::time::Duration;
@@ -15,7 +15,7 @@ impl Watcher for LoggingWatcher {
 }
 
 fn zk_example() -> ZkResult<()> {
-    let zk = try!(ZooKeeper::connect("127.0.0.1:2181", Duration::seconds(5), LoggingWatcher));
+    let zk = try!(ZooKeeper::connect("127.0.0.1:2181", Duration::from_secs(5), LoggingWatcher));
 
     let mut tmp = String::new();
     println!("connecting... press any to continue");

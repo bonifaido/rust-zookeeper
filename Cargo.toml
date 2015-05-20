@@ -8,3 +8,9 @@ homepage = "https://github.com/bonifaido/rust-zookeeper"
 repository = "https://github.com/bonifaido/rust-zookeeper"
 description = "A minimal ZooKeeper client, work in progress"
 readme = "README.md"
+
+[dependencies]
+enum_primitive = "*"
+num = "0.1.24"
+byteorder = "*"
+schedule_recv = "0.0.1"

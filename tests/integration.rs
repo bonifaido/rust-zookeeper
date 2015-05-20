@@ -1,4 +1,4 @@
-#![feature(std_misc)]
+#![feature(duration)]
 #![deny(unused_mut)]
 extern crate zookeeper;
 
@@ -46,7 +46,7 @@ fn simple_integration_test() {
     let connect_string = get_connect_string(&mut server);
 
     // Connect to the test cluster
-    let client = ZooKeeper::connect(connect_string.as_ref(), Duration::seconds(5), LoggingWatcher).unwrap();
+    let client = ZooKeeper::connect(connect_string.as_ref(), Duration::from_secs(5), LoggingWatcher).unwrap();
 
 
     // Do the tests

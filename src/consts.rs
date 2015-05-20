@@ -1,7 +1,8 @@
 use std::fmt;
 
+enum_from_primitive! {
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ZkError {
     APIError = -100,
     AuthFailed = -115,
@@ -22,6 +23,7 @@ pub enum ZkError {
     SessionExpired = -112,
     SystemError = -1,
     Unimplemented = -6
+}
 }
 
 // TODO For me this is ugly compared to the previous #[derive(Show)]
@@ -48,8 +50,9 @@ pub enum CreateMode {
     EphemeralSequential
 }
 
+enum_from_primitive! {
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Debug)]
+#[derive(Debug)]
 pub enum KeeperState {
     Disconnected = 0,
     SyncConnected = 3,
@@ -58,9 +61,11 @@ pub enum KeeperState {
     SaslAuthenticated = 6,
     Expired = -112
 }
+}
 
+enum_from_primitive! {
 #[allow(missing_copy_implementations)]
-#[derive(FromPrimitive, Debug)]
+#[derive(Debug)]
 pub enum WatchedEventType {
     None = -1,
     NodeCreated = 1,
@@ -69,4 +74,5 @@ pub enum WatchedEventType {
     NodeChildrenChanged = 4,
     DataWatchRemoved = 5,
     ChildWatchRemoved = 6
+}
 }

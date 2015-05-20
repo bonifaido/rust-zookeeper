@@ -1,5 +1,10 @@
-#![feature(core, old_io, io, std_misc)]
+#![feature(duration, std_misc)]
 #![deny(unused_mut)]
+#[macro_use]
+extern crate enum_primitive;
+extern crate num;
+extern crate byteorder;
+extern crate schedule_recv;
 
 pub use consts::*;
 pub use proto::{Acl, Stat, WatchedEvent};

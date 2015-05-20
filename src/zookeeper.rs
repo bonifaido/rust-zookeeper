@@ -1,15 +1,16 @@
 use consts::*;
 use proto::*;
 
-use std::old_io::{IoResult, MemReader, MemWriter, Reader, TcpStream};
-use std::old_io::net::ip::SocketAddr;
-use std::old_io::timer::Timer;
-use std::num::FromPrimitive;
+use std::io::{Cursor, Read, Result};
+use std::net::{SocketAddr, TcpStream};
+use std::result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, SyncSender, sync_channel};
 use std::time::Duration;
 use std::thread;
+use num::FromPrimitive;
+use schedule_recv::periodic_ms;
 
 macro_rules! fetch_result(
     ($res:ident, $enu:ident::$hack:ident($item:ident)) => (
@@ -50,7 +51,7 @@ pub trait Watcher: Send {
     fn handle(&self, &WatchedEvent);
 }
 
-pub type ZkResult<T> = Result<T, ZkError>;
+pub type ZkResult<T> = result::Result<T, ZkError>;
 
 struct Packet {
     opcode: OpCode,
@@ -99,8 +100,7 @@ impl ZooKeeper {
         thread::spawn(move || {
             println!("Writer: thread started");
 
-            let mut timer = Timer::new().unwrap();
-            let ping_timeout = timer.periodic(timeout);
+            let ping_timeout = periodic_ms(timeout.secs() as u32 * 1000);
             let mut writer_sock;
             let mut conn_resp = ConnectResponse::initial(timeout);
 
@@ -117,7 +117,7 @@ impl ZooKeeper {
                 conn_resp = new_conn_resp;
 
                 // pass a clone of the writer socket to the reader thread, will be used for reading
-                match reader_sock_tx.send(writer_sock.clone()) {
+                match reader_sock_tx.send(writer_sock.try_clone().unwrap()) { // TODO why not clone?
                     Err(_) => panic!("Writer: failed to pass new socket to reader thread"),
                     _ => ()
                 }
@@ -162,7 +162,7 @@ impl ZooKeeper {
                             }
                         },
                         _ = ping_timeout.recv() => {
-                            println!("Writer: Pinging {}", writer_sock.peer_name().unwrap());
+                            println!("Writer: Pinging {}", writer_sock.peer_addr().unwrap());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_byte_vec();
                             let res = writer_sock.write_buffer(&ping);
                             if res.is_err() {
@@ -215,13 +215,13 @@ impl ZooKeeper {
         Ok(ZooKeeper{xid: Arc::new(AtomicIsize::new(1)), running: running1, packet_tx: packet_tx})
     }
 
-    fn read_reply<R: Reader>(sock: &mut R) -> IoResult<(ReplyHeader, MemReader)> {
+    fn read_reply<R: Read>(sock: &mut R) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
         let buf = try!(sock.read_buffer());
-        let mut reader = MemReader::new(buf);
+        let mut reader = Cursor::new(buf);
         Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 
-    fn parse_reply<R: Reader>(err: i32, packet: &Packet, buf: &mut R) -> Response {
+    fn parse_reply<R: Read>(err: i32, packet: &Packet, buf: &mut R) -> Response {
         match err {
             0 => match packet.opcode {
                 OpCode::Auth => Response::Auth,
@@ -248,28 +248,29 @@ impl ZooKeeper {
         loop {
             for host in hosts.iter() {
                 println!("Writer: Connecting to {}...", host);
-                let mut sock = TcpStream::connect_timeout(*host, Duration::seconds(1));
-                if sock.is_err() {
-                    println!("Writer: Failed to connect to {}", host);
-                    continue;
+                match TcpStream::connect(*host) {
+                    Ok(mut sock) => {
+                        let write = sock.write_buffer(&conn_req);
+                        if write.is_err() {
+                            continue;
+                        }
+
+                        let read = sock.read_buffer();
+                        if read.is_err() {
+                            continue;
+                        }
+
+                        let mut buf = Cursor::new(read.unwrap());
+                        let conn_resp = ConnectResponse::read_from(&mut buf);
+
+                        println!("Writer: Connection: {:?}", conn_resp);
+
+                        return (sock, conn_resp)
+                    },
+                    Err(err) => {
+                        println!("Writer: Failed to connect to {} err: {}", host, err);
+                    }
                 }
-
-                let write = sock.write_buffer(&conn_req);
-                if write.is_err() {
-                    continue;
-                }
-
-                let read = sock.read_buffer();
-                if read.is_err() {
-                    continue;
-                }
-
-                let mut buf = MemReader::new(read.unwrap());
-                let conn_resp = ConnectResponse::read_from(&mut buf);
-
-                println!("Writer: Connection: {:?}", conn_resp);
-
-                return (sock.unwrap(), conn_resp)
             }
         }
     }
@@ -281,12 +282,12 @@ impl ZooKeeper {
     fn request<T: Archive>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
-        let mut buf = MemWriter::new();
+        let mut buf = Vec::new();
         let _ = rh.write_to(&mut buf);
         let _ = req.write_to(&mut buf);
 
         let (resp_tx, resp_rx) = sync_channel(0);
-        let packet = Packet{opcode: opcode, data: buf.into_inner(), resp_tx: resp_tx};
+        let packet = Packet{opcode: opcode, data: buf, resp_tx: resp_tx};
 
         if self.packet_tx.send(packet).is_err() {
             // writer thread died
