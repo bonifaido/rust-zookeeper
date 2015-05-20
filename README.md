@@ -7,7 +7,7 @@ Zookeeper client written 100% in Rust - Work in Progress
 
 This library is intended to be the equivalent of the official (low-level) [ZooKeeper][javadoc] client which ships with the ZK distribution.
 
-I have plans to implement recipes and more complex [curator]Curator like logic as well, but that takes a much more work, so pull requests are more than welcome!
+I have plans to implement recipes and more complex [curator][Curator] like logic as well, but that takes a much more work, so pull requests are more than welcome!
 
 ## Feature and Bug Handling
 Also if you find a bug or would like to see a feature implemented please raise an issue or send a pull-request.
