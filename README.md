@@ -2,6 +2,7 @@
 =====================
 [![Version](https://img.shields.io/crates/v/zookeeper.svg)](https://crates.io/crates/zookeeper)
 [![Build Status](https://travis-ci.org/bonifaido/rust-zookeeper.svg?branch=master)](https://travis-ci.org/bonifaido/rust-zookeeper)
+[![License](https://img.shields.io/crates/l/zookeeper.svg)](http://opensource.org/licenses/MIT)
 
 Zookeeper client written 100% in Rust - Work in Progress
 
