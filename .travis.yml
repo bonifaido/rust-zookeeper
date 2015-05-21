@@ -10,6 +10,6 @@ script:
   - cd zk-test-cluster && mvn clean package && cd -
   - cargo test --verbose
 after_success:
-  - travis-cargo --features unstable --only nightly doc && travis-cargo --features unstable --only nightly doc-upload
+  - travis-cargo --only nightly -- --features unstable doc && travis-cargo --only nightly doc-upload -- --features unstable
 sudo: false
 # as per http://blog.travis-ci.com/2014-12-17-faster-builds-with-container-based-infrastructure/
