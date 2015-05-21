@@ -34,7 +34,7 @@ extern crate zookeeper;
 ## Examples
 Check the [examples][examples] directory
 
-[doc]: http://www.rust-ci.org/bonifaido/rust-zookeeper/doc/zookeeper
+[doc]: http://bonifaido.github.io/rust-zookeeper
 [examples]: https://github.com/bonifaido/rust-zookeeper/tree/master/examples
 [javadoc]: https://zookeeper.apache.org/doc/r3.4.6/api/org/apache/zookeeper/ZooKeeper.html
 [curator]: http://curator.apache.org/
