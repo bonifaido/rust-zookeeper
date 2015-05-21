@@ -6,9 +6,9 @@ env:
 before_script:
   - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
 script:
-  - travis-cargo build --verbose
+  - travis-cargo build
   - cd zk-test-cluster && mvn clean package && cd -
-  - travis-cargo test --verbose
+  - travis-cargo test
 after_success:
   - travis-cargo --only nightly doc && travis-cargo --only nightly doc-upload
 sudo: false
