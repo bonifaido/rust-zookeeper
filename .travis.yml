@@ -2,6 +2,7 @@ language: rust
 rust: nightly
 env:
   global:
+    - TRAVIS_CARGO_NIGHTLY_FEATURE=nightly
     - secure: qQK6lhqsdiOzasWVHr1x9FI5n6LD8tUpa+r3z55JAz5Ay6trx6YwZthwzknOMa1XzhC9+XxYJ/mT2I317aIigcCnsIZasfhTwEXT2z+CNAkxwJsXoUSJ2ceVfhpHT2PMziK45afu9YI5+PmjA9mqWj3CftWTYR84zw1nrJtyEAM=
 before_script:
   - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
