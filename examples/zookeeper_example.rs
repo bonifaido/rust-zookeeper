@@ -1,11 +1,11 @@
 #![feature(duration)]
 extern crate zookeeper;
 
-use std::time::Duration;
 use std::thread;
 use std::io;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZkResult, ZooKeeper};
 use zookeeper::perms;
+use zookeeper::Duration;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {

@@ -1,7 +1,7 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use consts::{KeeperState, WatchedEventType, ZkError};
 use std::io::{Read, Write, Result, Error, ErrorKind};
-use std::time::Duration;
+use time::Duration;
 use num::FromPrimitive;
 
 trait StringReader: Read {
@@ -190,7 +190,7 @@ impl ConnectResponse {
     pub fn initial(timeout: Duration) -> ConnectResponse {
         ConnectResponse{
             protocol_version: 0,
-            timeout: timeout.secs() as i32 * 1000,
+            timeout: timeout.num_seconds() as i32 * 1000,
             session_id: 0,
             passwd: [0;16].to_vec(),
             read_only: false}

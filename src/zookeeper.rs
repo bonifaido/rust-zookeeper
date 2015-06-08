@@ -7,8 +7,8 @@ use std::result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, SyncSender, sync_channel};
-use std::time::Duration;
 use std::thread;
+use time::Duration;
 use num::FromPrimitive;
 use schedule_recv::periodic_ms;
 
@@ -100,7 +100,7 @@ impl ZooKeeper {
         thread::spawn(move || {
             println!("Writer: thread started");
 
-            let ping_timeout = periodic_ms(timeout.secs() as u32 * 1000);
+            let ping_timeout = periodic_ms(timeout.num_seconds() as u32 * 1000);
             let mut writer_sock;
             let mut conn_resp = ConnectResponse::initial(timeout);
 
