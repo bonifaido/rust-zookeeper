@@ -7,7 +7,7 @@ use zookeeper::perms;
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use time::Duration;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
