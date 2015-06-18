@@ -67,6 +67,7 @@ struct ConnectString {
 
 #[derive(Clone)]
 pub struct ZooKeeper {
+    chroot: String,
     xid: Arc<AtomicIsize>,
     running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer task
@@ -92,6 +93,7 @@ impl ZooKeeper {
         let running1 = running.clone();
 
         let connect_string = try!(Self::parse_connect_string(connect_string));
+        let chroot = connect_string.chroot.clone();
 
         thread::spawn(move || {
             println!("Event: thread started");
@@ -129,7 +131,7 @@ impl ZooKeeper {
                     _ => ()
                 }
 
-                // Send Connected event through event thread to the user
+                // Send Connected event through event thread to watcher
                 let keeper_state = if conn_resp.read_only {
                     KeeperState::ConnectedReadOnly
                 } else {
@@ -219,7 +221,10 @@ impl ZooKeeper {
             }
         });
 
-        Ok(ZooKeeper{xid: Arc::new(AtomicIsize::new(1)), running: running1, packet_tx: packet_tx})
+        Ok(ZooKeeper{chroot: chroot,
+                     xid: Arc::new(AtomicIsize::new(1)),
+                     running: running1,
+                     packet_tx: packet_tx})
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<ConnectString> {
@@ -231,9 +236,9 @@ impl ZooKeeper {
                 } else {
                     len
                 };
-                (connect_string[i..j].to_string(), i)
+                (&connect_string[i..j], i)
             },
-            None => ("".to_string(), connect_string.len())
+            None => ("", connect_string.len())
         };
 
         let mut addrs = Vec::new();
@@ -248,7 +253,7 @@ impl ZooKeeper {
             addrs.push(addr);
         }
 
-        Ok(ConnectString { addrs: addrs, chroot: chroot })
+        Ok(ConnectString{addrs: addrs, chroot: chroot.to_string()})
     }
 
     fn read_reply<R: Read>(sock: &mut R) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
@@ -336,6 +341,13 @@ impl ZooKeeper {
         }
     }
 
+    fn path(&self, path: &str) -> ZkResult<String> {
+        match path {
+            "" => Err(ZkError::BadArguments),
+            path => Ok(self.chroot.clone() + path)
+        }
+    }
+
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
         let req = AuthRequest{typ: 0, scheme: scheme.to_string(), auth: auth};
 
@@ -345,7 +357,7 @@ impl ZooKeeper {
     }
 
     pub fn create(&self, path: &str, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
-        let req = CreateRequest{path: path.to_string(), data: data, acl: acl, flags: mode as i32};
+        let req = CreateRequest{path: try!(self.path(path)), data: data, acl: acl, flags: mode as i32};
 
         let result = self.request(OpCode::Create, self.xid(), req);
 
@@ -353,7 +365,7 @@ impl ZooKeeper {
     }
 
     pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
-        let req = DeleteRequest{path: path.to_string(), version: version};
+        let req = DeleteRequest{path: try!(self.path(path)), version: version};
 
         let result = self.request(OpCode::Delete, self.xid(), req);
 
@@ -361,7 +373,7 @@ impl ZooKeeper {
     }
 
     pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Stat> {
-        let req = ExistsRequest{path: path.to_string(), watch: watch};
+        let req = ExistsRequest{path: try!(self.path(path)), watch: watch};
 
         let result = self.request(OpCode::Exists, self.xid(), req);
 
@@ -369,7 +381,7 @@ impl ZooKeeper {
     }
 
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
-        let req = GetAclRequest{path: path.to_string()};
+        let req = GetAclRequest{path: try!(self.path(path))};
 
         let result = self.request(OpCode::GetAcl, self.xid(), req);
 
@@ -377,7 +389,7 @@ impl ZooKeeper {
     }
 
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
-        let req = GetChildrenRequest{path: path.to_string(), watch: watch};
+        let req = GetChildrenRequest{path: try!(self.path(path)), watch: watch};
 
         let result = self.request(OpCode::GetChildren, self.xid(), req);
 
@@ -385,7 +397,7 @@ impl ZooKeeper {
     }
 
     pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
-        let req = GetDataRequest{path: path.to_string(), watch: watch};
+        let req = GetDataRequest{path: try!(self.path(path)), watch: watch};
 
         let result = self.request(OpCode::GetData, self.xid(), req);
 
@@ -393,7 +405,7 @@ impl ZooKeeper {
     }
 
     pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
-        let req = SetAclRequest{path: path.to_string(), acl: acl, version: version};
+        let req = SetAclRequest{path: try!(self.path(path)), acl: acl, version: version};
 
         let result = self.request(OpCode::SetAcl, self.xid(), req);
 
@@ -401,7 +413,7 @@ impl ZooKeeper {
     }
 
     pub fn set_data(&self, path: &str, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
-        let req = SetDataRequest{path: path.to_string(), data: data, version: version};
+        let req = SetDataRequest{path: try!(self.path(path)), data: data, version: version};
 
         let result = self.request(OpCode::SetData, self.xid(), req);
 

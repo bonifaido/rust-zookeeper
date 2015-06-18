@@ -15,7 +15,7 @@ impl Watcher for LoggingWatcher {
 }
 
 fn zk_example() -> ZkResult<()> {
-    let zk = try!(ZooKeeper::connect("localhost:2181", Duration::from_secs(5), LoggingWatcher));
+    let zk = try!(ZooKeeper::connect("localhost:2181/", Duration::from_secs(5), LoggingWatcher));
 
     let mut tmp = String::new();
     println!("connecting... press any to continue");
@@ -36,9 +36,9 @@ fn zk_example() -> ZkResult<()> {
 
     println!("exists -> {:?}", exists);
 
-    let dont_exists = zk.exists("/blabla", true);
+    let doesnt_exist = zk.exists("/blabla", true);
 
-    println!("don't exists path -> {:?}", dont_exists);
+    println!("don't exists path -> {:?}", doesnt_exist);
 
     let get_acl = zk.get_acl("/test");
 
@@ -60,9 +60,9 @@ fn zk_example() -> ZkResult<()> {
 
     println!("get_data -> {:?}", get_data);
 
-    let delete = zk.delete("/test", -1);
+    // let delete = zk.delete("/test", -1);
 
-    println!("deleted /test -> {:?}", delete);
+    // println!("deleted /test -> {:?}", delete);
 
     println!("press enter to close client");
     io::stdin().read_line(&mut tmp).unwrap();
