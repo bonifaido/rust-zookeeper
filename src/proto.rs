@@ -1,6 +1,6 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use consts::{KeeperState, WatchedEventType, ZkError};
-use std::io::{Read, Write, Result, Error, ErrorKind};
+use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
 use std::time::Duration;
 use num::FromPrimitive;
 
@@ -16,7 +16,11 @@ pub trait BufferWriter: Write {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()>;
 }
 
-impl<R: Read> StringReader for R {
+pub trait ZkReplyRead: Read {
+    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)>;
+}
+
+impl <R: Read> StringReader for R {
     fn read_string(&mut self) -> Result<String> {
         let raw = try!(self.read_buffer());
         Ok(String::from_utf8(raw).unwrap())
@@ -24,7 +28,7 @@ impl<R: Read> StringReader for R {
 }
 
 // A buffer is an u8 string prefixed with it's length as u32
-impl<R: Read> BufferReader for R {
+impl <R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = try!(self.read_i32::<BigEndian>()) as usize;
         let mut buf = vec![0; len];
@@ -37,7 +41,7 @@ impl<R: Read> BufferReader for R {
     }
 }
 
-impl<W: Write> BufferWriter<> for W {
+impl <W: Write> BufferWriter<> for W {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()> {
         try!(self.write_i32::<BigEndian>(buffer.len() as i32));
         self.write_all(buffer)
@@ -48,7 +52,7 @@ pub trait Archive {
     fn write_to(&self, writer: &mut Write) -> Result<()>;
 
     #[allow(unused_must_use)]
-    fn to_byte_vec(&self) -> Vec<u8> {
+    fn to_buffer(&self) -> Vec<u8> {
         let mut w = Vec::new();
         self.write_to(&mut w); // should never fail
         w
@@ -70,7 +74,7 @@ impl Archive for String {
     }
 }
 
-impl<T: Archive> Archive for Vec<T> {
+impl <T: Archive> Archive for Vec<T> {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
@@ -233,6 +237,14 @@ impl ReplyHeader {
         let zxid = reader.read_i64::<BigEndian>().unwrap();
         let err = reader.read_i32::<BigEndian>().unwrap();
         ReplyHeader{xid: xid, zxid: zxid, err: err}
+    }
+}
+
+impl <R: Read> ZkReplyRead for R {
+    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
+        let buf = try!(self.read_buffer());
+        let mut reader = Cursor::new(buf);
+        Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 }
 

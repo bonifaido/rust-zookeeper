@@ -1,4 +1,4 @@
-#![feature(duration, std_misc)]
+#![feature(duration, mpsc_select)]
 #![deny(unused_mut)]
 #[macro_use]
 extern crate enum_primitive;
