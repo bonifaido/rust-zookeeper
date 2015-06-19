@@ -155,6 +155,7 @@ impl ZooKeeper {
                             let res = writer_sock.write_buffer(&packet.data);
                             if res.is_err() {
                                 println!("Writer: failed to send to server, trying to reconnect");
+                                // TODO enqueue a Disconnected event here
                                 break;
                             }
                             let opcode = packet.opcode;
@@ -165,6 +166,7 @@ impl ZooKeeper {
                             match opcode {
                                 OpCode::CloseSession => {
                                     println!("Writer: exiting");
+                                    // TODO enqueue a Disconnected event here
                                     return
                                 },
                                 _ => ()

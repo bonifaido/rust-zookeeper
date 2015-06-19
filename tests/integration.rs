@@ -5,7 +5,7 @@ extern crate zookeeper;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ fn start_zk() -> Child {
     match Command::new("java")
             .arg("-jar")
             .arg("zk-test-cluster/target/main.jar")
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn() {
         Ok(p) => p,
@@ -36,6 +37,11 @@ fn get_connect_string(server: &mut Child) -> String {
     }
     connect_string.pop(); // remove '\n'
     connect_string
+}
+
+fn shutdown(server: &mut Child) {
+    server.stdin.as_mut().unwrap().write(b"q").unwrap();
+    assert!(server.wait().unwrap().success());
 }
 
 #[test]
@@ -80,5 +86,5 @@ fn simple_integration_test() {
 
 
     // Close the server
-    server.kill().unwrap();
+    shutdown(&mut server);
 }
