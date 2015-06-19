@@ -90,7 +90,7 @@ impl ZooKeeper {
         // event channel for passing WatchedEvents to watcher on a seperate task
         let (event_tx, event_rx) = channel();
 
-        // event channel for passing WatchedEvents that the client should generate
+        // event channel for passing WatchedEvents that this instance generates
         let event_tx_manual = event_tx.clone();
 
         let running = Arc::new(AtomicBool::new(true));
@@ -108,7 +108,7 @@ impl ZooKeeper {
                         watcher.handle(&event)
                     },
                     Err(e) => {
-                        println!("Event: {:?}, exiting", e);
+                        println!("Event: {}, exiting", e);
                         return
                     }
                 }
@@ -136,7 +136,7 @@ impl ZooKeeper {
                 let reader_sock = match writer_sock.try_clone() {
                     Ok(sock) => sock,
                     Err(e) => {
-                        println!("Writer: Failed to clone socker for Reader: {:?}", e);
+                        println!("Writer: Failed to clone socker for Reader: {}", e);
                         break
                     }
                 };
@@ -144,7 +144,7 @@ impl ZooKeeper {
                 // pass a clone of the socket to the reader thread for reading
                 match reader_sock_tx.send(reader_sock) {
                     Ok(()) => (),
-                    Err(e) => panic!("Writer: failed to pass socket to Reader: {:?}", e)
+                    Err(e) => panic!("Writer: failed to pass socket to Reader: {}", e)
                 }
 
                 // Send Connected event through event thread to Watchers
@@ -167,14 +167,14 @@ impl ZooKeeper {
                             let packet = match res {
                                 Ok(packet) => packet,
                                 Err(e) => {
-                                    println!("Writer: {:?}, exiting", e);
+                                    println!("Writer: {}, exiting", e);
                                     return
                                 }
                             };
                             match writer_sock.write_buffer(&packet.data) {
                                 Ok(()) => (),
                                 Err(e) => {
-                                    println!("Writer: failed to send to server, reconnecting {:?}", e);
+                                    println!("Writer: failed to send to server, reconnecting {}", e);
                                     // TODO enqueue a Disconnected event here
                                     break
                                 }
@@ -182,7 +182,7 @@ impl ZooKeeper {
                             let opcode = packet.opcode;
                             match written_tx.send(packet) {
                                 Ok(()) => (),
-                                Err(e) => panic!("Writer: failed to communicate with Reader: {:?}", e)
+                                Err(e) => panic!("Writer: failed to communicate with Reader: {}", e)
                             }
                             match opcode {
                                 OpCode::CloseSession => {
@@ -196,11 +196,13 @@ impl ZooKeeper {
                         _ = ping_timeout.recv() => {
                             println!("Writer: Pinging {}", writer_sock.peer_addr().unwrap());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_buffer();
-                            let res = writer_sock.write_buffer(&ping);
-                            if res.is_err() {
-                                println!("Writer: failed to ping server, trying to reconnect");
-                                // TODO enqueue a Disconnected event here
-                                break
+                            match writer_sock.write_buffer(&ping) {
+                                Ok(()) => (),
+                                Err(e) => {
+                                    println!("Writer: failed to ping server {}, trying to reconnect", e);
+                                    // TODO enqueue a Disconnected event here
+                                    break
+                                }
                             }
                         }
                     };
@@ -215,7 +217,7 @@ impl ZooKeeper {
                 let mut reader_sock = match reader_sock_rx.recv() {
                     Ok(sock) => sock,
                     Err(e) => {
-                        println!("Reader: Writer died {:?}, exiting", e);
+                        println!("Reader: Writer died {}, exiting", e);
                         return
                     }
                 };
@@ -224,7 +226,7 @@ impl ZooKeeper {
                     let (reply_header, mut buf) = match reader_sock.read_reply() {
                         Ok(reply) => reply,
                         Err(e) => {
-                            println!("Reader: read_reply {:?}", e);
+                            println!("Reader: read_reply {}", e);
                             break
                         }
                     };
@@ -236,7 +238,7 @@ impl ZooKeeper {
                             let result = Self::parse_reply(reply_header.err, &packet, &mut buf);
                             match packet.resp_tx.send(result) {
                                 Ok(()) => (),
-                                Err(e) => println!("Reader: failed to pass result to client {:?}", e)
+                                Err(e) => println!("Reader: failed to pass result to client {}", e)
                             }
                         }
                     }
@@ -305,7 +307,7 @@ impl ZooKeeper {
 
         loop {
             for host in connect_string.addrs.iter() {
-                println!("Writer: Connecting to {:?}...", host);
+                println!("Writer: Connecting to {}...", host);
                 match TcpStream::connect(host) {
                     Ok(mut sock) => {
                         match sock.write_buffer(&conn_req) {
@@ -320,12 +322,12 @@ impl ZooKeeper {
 
                         let conn_resp = ConnectResponse::read_from(&mut buffer);
 
-                        println!("Writer: Connection: {:?}", conn_resp);
+                        println!("Writer: {:?}", conn_resp);
 
                         return (sock, conn_resp)
                     },
-                    Err(err) => {
-                        println!("Writer: Failed to connect to {:?} err: {}", host, err);
+                    Err(e) => {
+                        println!("Writer: Failed to connect to {} err: {}", host, e);
                     }
                 }
             }
@@ -346,14 +348,14 @@ impl ZooKeeper {
         let (resp_tx, resp_rx) = sync_channel(0);
         let packet = Packet{opcode: opcode, data: buf, resp_tx: resp_tx};
 
-        if self.packet_tx.send(packet).is_err() {
-            // writer thread died
-            return Response::Error(ZkError::SystemError)
+        match self.packet_tx.send(packet) {
+            Ok(()) => (),
+            Err(_) => return Response::Error(ZkError::SystemError)
         }
 
         match resp_rx.recv() {
-            Err(_) => Response::Error(ZkError::SystemError),
-            Ok(response) => response
+            Ok(response) => response,
+            Err(_) => Response::Error(ZkError::SystemError)
         }
     }
 
