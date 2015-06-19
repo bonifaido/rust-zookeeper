@@ -32,7 +32,7 @@ impl <R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = try!(self.read_i32::<BigEndian>()) as usize;
         let mut buf = vec![0; len];
-        let read = try!(self.read(&mut buf[..]));
+        let read = try!(self.read(&mut buf));
         if read == len {
             Ok(buf)
         } else {

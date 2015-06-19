@@ -108,7 +108,7 @@ impl ZooKeeper {
                         watcher.handle(&event)
                     },
                     Err(e) => {
-                        println!("Event: {}, exiting", e);
+                        println!("Event: Reader died {}, exiting", e);
                         return
                     }
                 }
@@ -153,12 +153,16 @@ impl ZooKeeper {
                 } else {
                     KeeperState::SyncConnected
                 };
-                event_tx_manual.send(
+
+                match event_tx_manual.send(
                     WatchedEvent{
                         event_type: WatchedEventType::None,
                         keeper_state: keeper_state,
                         path: None}
-                ).unwrap();
+                ) {
+                    Ok(()) => (),
+                    Err(e) => panic!("Writer: Event died {}", e)
+                }
 
                 loop {
                     // do we have something to send or do we need to ping?
@@ -231,10 +235,19 @@ impl ZooKeeper {
                         }
                     };
                     match reply_header.xid {
-                        -1 => event_tx.send(WatchedEvent::read_from(&mut buf)).unwrap(),
+                        -1 => match event_tx.send(WatchedEvent::read_from(&mut buf)) {
+                            Ok(()) => (),
+                            Err(e) => panic!("Reader: Event died {}", e)
+                        },
                         -2 => println!("Reader: got ping event"),
                         _xid => {
-                            let packet = written_rx.recv().unwrap();
+                            let packet = match written_rx.recv() {
+                                Ok(packet) => packet,
+                                Err(e) => {
+                                    println!("Reader: Writer died {}", e);
+                                    break
+                                }
+                            };
                             let result = Self::parse_reply(reply_header.err, &packet, &mut buf);
                             match packet.resp_tx.send(result) {
                                 Ok(()) => (),
@@ -442,6 +455,12 @@ impl ZooKeeper {
         self.request(OpCode::CloseSession, 0, EmptyRequest);
 
         self.running.store(false, Ordering::SeqCst);
+    }
+}
+
+impl Drop for ZooKeeper {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
