@@ -112,18 +112,16 @@ impl ZooKeeper {
         thread::spawn(move || {
             let ping_timeout = periodic_ms(timeout.secs() as u32 * 1000);
             let mut conn_resp = ConnectResponse::initial(timeout);
-            let mut writer_sock;
 
             loop {
                 debug!("Writer: connecting, trying to get new writer_sock");
-                let (new_writer_sock, new_conn_resp) = match running.load(Ordering::Relaxed) {
+                let (mut writer_sock, new_conn_resp) = match running.load(Ordering::Relaxed) {
                     true => Self::reconnect(&addrs, conn_resp),
                     false => {
                         debug!("Writer: closed, exiting");
                         return
                     }
                 };
-                writer_sock = new_writer_sock;
                 conn_resp = new_conn_resp;
 
                 // Session has expired
@@ -316,12 +314,12 @@ impl ZooKeeper {
                             Err(_) => continue
                         }
 
-                        let mut buffer = match sock.read_buffer() {
-                            Ok(read) => Cursor::new(read),
+                        let mut buf = match sock.read_buffer() {
+                            Ok(buf) => Cursor::new(buf),
                             Err(_) => continue
                         };
 
-                        let conn_resp = ConnectResponse::read_from(&mut buffer);
+                        let conn_resp = ConnectResponse::read_from(&mut buf);
 
                         debug!("Writer: {:?}", conn_resp);
 
@@ -349,7 +347,7 @@ impl ZooKeeper {
         self.xid.fetch_add(1, Ordering::Relaxed) as i32
     }
 
-    fn request<T: Archive>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
+    fn request<T: WriteTo>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
         let mut buf = Vec::new();

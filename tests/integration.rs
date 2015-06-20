@@ -1,6 +1,7 @@
 #![feature(duration)]
 #![deny(unused_mut)]
 extern crate zookeeper;
+extern crate env_logger;
 
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
@@ -46,6 +47,7 @@ fn shutdown(server: &mut Child) {
 
 #[test]
 fn simple_integration_test() {
+    env_logger::init().unwrap();
 
     // Create a test cluster and obtain its connection string
     let mut server = start_zk();

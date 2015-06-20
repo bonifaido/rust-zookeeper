@@ -4,6 +4,21 @@ use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
 use std::time::Duration;
 use num::FromPrimitive;
 
+pub trait ReadFrom {
+    fn read_from<R: Read>(read: &mut R) -> Self;
+}
+
+pub trait WriteTo {
+    fn write_to(&self, writer: &mut Write) -> Result<()>;
+
+    #[allow(unused_must_use)]
+    fn to_buffer(&self) -> Vec<u8> {
+        let mut w = Vec::new();
+        self.write_to(&mut w); // should never fail
+        w
+    }
+}
+
 trait StringReader: Read {
     fn read_string(&mut self) -> Result<String>;
 }
@@ -48,25 +63,14 @@ impl <W: Write> BufferWriter<> for W {
     }
 }
 
-pub trait Archive {
-    fn write_to(&self, writer: &mut Write) -> Result<()>;
-
-    #[allow(unused_must_use)]
-    fn to_buffer(&self) -> Vec<u8> {
-        let mut w = Vec::new();
-        self.write_to(&mut w); // should never fail
-        w
-    }
-}
-
-impl Archive for u8 {
+impl WriteTo for u8 {
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_u8(*self));
         Ok(())
     }
 }
 
-impl Archive for String {
+impl WriteTo for String {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
@@ -74,7 +78,7 @@ impl Archive for String {
     }
 }
 
-impl <T: Archive> Archive for Vec<T> {
+impl <T: WriteTo> WriteTo for Vec<T> {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
@@ -89,6 +93,14 @@ impl <T: Archive> Archive for Vec<T> {
     }
 }
 
+impl <R: Read> ZkReplyRead for R {
+    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
+        let buf = try!(self.read_buffer());
+        let mut reader = Cursor::new(buf);
+        Ok((ReplyHeader::read_from(&mut reader), reader))
+    }
+}
+
 #[derive(Debug)]
 pub struct Acl {
     pub perms: i32,
@@ -96,16 +108,16 @@ pub struct Acl {
     pub id: String
 }
 
-impl Acl {
-    fn read_from<R: Read>(reader: &mut R) -> Acl {
-        let perms = reader.read_i32::<BigEndian>().unwrap();
-        let scheme = reader.read_string().unwrap();
-        let id = reader.read_string().unwrap();
+impl ReadFrom for Acl {
+    fn read_from<R: Read>(read: &mut R) -> Acl {
+        let perms = read.read_i32::<BigEndian>().unwrap();
+        let scheme = read.read_string().unwrap();
+        let id = read.read_string().unwrap();
         Acl{perms: perms, scheme: scheme, id: id}
     }
 }
 
-impl Archive for Acl {
+impl WriteTo for Acl {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.perms));
@@ -129,20 +141,20 @@ pub struct Stat {
     pub pzxid: i64
 }
 
-impl Stat {
-    fn read_from(reader: &mut Read) -> Stat {
+impl ReadFrom for Stat {
+    fn read_from<R: Read>(read: &mut R) -> Stat {
         Stat{
-            czxid: reader.read_i64::<BigEndian>().unwrap(),
-            mzxid: reader.read_i64::<BigEndian>().unwrap(),
-            ctime: reader.read_i64::<BigEndian>().unwrap(),
-            mtime: reader.read_i64::<BigEndian>().unwrap(),
-            version: reader.read_i32::<BigEndian>().unwrap(),
-            cversion: reader.read_i32::<BigEndian>().unwrap(),
-            aversion: reader.read_i32::<BigEndian>().unwrap(),
-            ephemeral_owner: reader.read_i64::<BigEndian>().unwrap(),
-            data_length: reader.read_i32::<BigEndian>().unwrap(),
-            num_children: reader.read_i32::<BigEndian>().unwrap(),
-            pzxid: reader.read_i64::<BigEndian>().unwrap()}
+            czxid: read.read_i64::<BigEndian>().unwrap(),
+            mzxid: read.read_i64::<BigEndian>().unwrap(),
+            ctime: read.read_i64::<BigEndian>().unwrap(),
+            mtime: read.read_i64::<BigEndian>().unwrap(),
+            version: read.read_i32::<BigEndian>().unwrap(),
+            cversion: read.read_i32::<BigEndian>().unwrap(),
+            aversion: read.read_i32::<BigEndian>().unwrap(),
+            ephemeral_owner: read.read_i64::<BigEndian>().unwrap(),
+            data_length: read.read_i32::<BigEndian>().unwrap(),
+            num_children: read.read_i32::<BigEndian>().unwrap(),
+            pzxid: read.read_i64::<BigEndian>().unwrap()}
     }
 }
 
@@ -167,7 +179,7 @@ impl ConnectRequest {
     }
 }
 
-impl Archive for ConnectRequest {
+impl WriteTo for ConnectRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.protocol_version));
@@ -198,8 +210,10 @@ impl ConnectResponse {
             passwd: [0;16].to_vec(),
             read_only: false}
     }
+}
 
-    pub fn read_from<R: Read>(reader: &mut R) -> ConnectResponse {
+impl ReadFrom for ConnectResponse {
+    fn read_from<R: Read>(reader: &mut R) -> ConnectResponse {
         ConnectResponse{
             protocol_version: reader.read_i32::<BigEndian>().unwrap(),
             timeout: reader.read_i32::<BigEndian>().unwrap(),
@@ -214,7 +228,7 @@ pub struct RequestHeader {
     pub opcode: i32
 }
 
-impl Archive for RequestHeader {
+impl WriteTo for RequestHeader {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.xid));
@@ -230,20 +244,12 @@ pub struct ReplyHeader {
     pub err: i32
 }
 
-impl ReplyHeader {
-    pub fn read_from(reader: &mut Read) -> ReplyHeader {
-        let xid = reader.read_i32::<BigEndian>().unwrap();
-        let zxid = reader.read_i64::<BigEndian>().unwrap();
-        let err = reader.read_i32::<BigEndian>().unwrap();
+impl ReadFrom for ReplyHeader {
+    fn read_from<R: Read>(read: &mut R) -> ReplyHeader {
+        let xid = read.read_i32::<BigEndian>().unwrap();
+        let zxid = read.read_i64::<BigEndian>().unwrap();
+        let err = read.read_i32::<BigEndian>().unwrap();
         ReplyHeader{xid: xid, zxid: zxid, err: err}
-    }
-}
-
-impl <R: Read> ZkReplyRead for R {
-    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
-        let buf = try!(self.read_buffer());
-        let mut reader = Cursor::new(buf);
-        Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 }
 
@@ -254,7 +260,7 @@ pub struct CreateRequest {
     pub flags: i32
 }
 
-impl Archive for CreateRequest {
+impl WriteTo for CreateRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(self.path.write_to(writer));
@@ -269,8 +275,8 @@ pub struct CreateResponse {
     pub path: String
 }
 
-impl CreateResponse {
-    pub fn read_from<R: Read>(reader: &mut R) -> CreateResponse {
+impl ReadFrom for CreateResponse {
+    fn read_from<R: Read>(reader: &mut R) -> CreateResponse {
         CreateResponse{path: reader.read_string().unwrap()}
     }
 }
@@ -280,7 +286,7 @@ pub struct DeleteRequest {
     pub version: i32
 }
 
-impl Archive for DeleteRequest {
+impl WriteTo for DeleteRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(self.path.write_to(writer));
@@ -294,7 +300,7 @@ struct StringAndBoolRequest {
     pub watch: bool
 }
 
-impl Archive for StringAndBoolRequest {
+impl WriteTo for StringAndBoolRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(self.path.write_to(writer));
@@ -309,9 +315,9 @@ pub struct StatResponse {
     pub stat: Stat
 }
 
-impl StatResponse {
-    pub fn read_from(reader: &mut Read) -> StatResponse {
-        StatResponse{stat: Stat::read_from(reader)}
+impl ReadFrom for StatResponse {
+    fn read_from<R: Read>(read: &mut R) -> StatResponse {
+        StatResponse{stat: Stat::read_from(read)}
     }
 }
 
@@ -319,7 +325,7 @@ pub struct GetAclRequest {
     pub path: String
 }
 
-impl Archive for GetAclRequest {
+impl WriteTo for GetAclRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         self.path.write_to(writer)
@@ -330,8 +336,8 @@ pub struct GetAclResponse {
     pub acl_stat: (Vec<Acl>, Stat)
 }
 
-impl GetAclResponse {
-    pub fn read_from<R: Read>(reader: &mut R) -> GetAclResponse {
+impl ReadFrom for GetAclResponse {
+    fn read_from<R: Read>(reader: &mut R) -> GetAclResponse {
         let len = reader.read_i32::<BigEndian>().unwrap();
         let mut acl = Vec::new();
         for _ in 0..len {
@@ -348,7 +354,7 @@ pub struct SetAclRequest {
     pub version: i32
 }
 
-impl Archive for SetAclRequest {
+impl WriteTo for SetAclRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(self.path.write_to(writer));
@@ -364,7 +370,7 @@ pub struct SetDataRequest {
     pub version: i32
 }
 
-impl Archive for SetDataRequest {
+impl WriteTo for SetDataRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(self.path.write_to(writer));
@@ -380,8 +386,8 @@ pub struct GetChildrenResponse {
     pub children: Vec<String>
 }
 
-impl GetChildrenResponse {
-    pub fn read_from<R: Read>(reader: &mut R) -> GetChildrenResponse {
+impl ReadFrom for GetChildrenResponse {
+    fn read_from<R: Read>(reader: &mut R) -> GetChildrenResponse {
         let len = reader.read_i32::<BigEndian>().unwrap();
         let mut children = Vec::new();
         for _ in 0..len {
@@ -397,8 +403,8 @@ pub struct GetDataResponse {
     pub data_stat: (Vec<u8>, Stat)
 }
 
-impl GetDataResponse {
-    pub fn read_from<R: Read>(reader: &mut R) -> GetDataResponse {
+impl ReadFrom for GetDataResponse {
+    fn read_from<R: Read>(reader: &mut R) -> GetDataResponse {
         let data = reader.read_buffer().unwrap();
         let stat = Stat::read_from(reader);
         GetDataResponse{data_stat: (data, stat)}
@@ -411,7 +417,7 @@ pub struct AuthRequest {
     pub auth: Vec<u8>
 }
 
-impl Archive for AuthRequest {
+impl WriteTo for AuthRequest {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         writer.write_i32::<BigEndian>(self.typ);
@@ -422,7 +428,7 @@ impl Archive for AuthRequest {
 
 pub struct EmptyRequest;
 
-impl Archive for EmptyRequest {
+impl WriteTo for EmptyRequest {
     fn write_to(&self, _: &mut Write) -> Result<()> { Ok(()) }
 }
 
@@ -433,8 +439,8 @@ pub struct WatchedEvent {
     pub path: Option<String>
 }
 
-impl WatchedEvent {
-    pub fn read_from<R: Read>(reader: &mut R) -> WatchedEvent {
+impl ReadFrom for WatchedEvent {
+    fn read_from<R: Read>(reader: &mut R) -> WatchedEvent {
         let typ = reader.read_i32::<BigEndian>().unwrap();
         let state = reader.read_i32::<BigEndian>().unwrap();
         let path = reader.read_string().unwrap();
