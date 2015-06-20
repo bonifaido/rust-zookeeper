@@ -1,7 +1,7 @@
 use consts::*;
 use proto::*;
 
-use std::io::{Cursor, Read, Result};
+use std::io::{Cursor, Read};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::result;
 use std::sync::Arc;
@@ -126,7 +126,7 @@ impl ZooKeeper {
                 let (new_writer_sock, new_conn_resp) = match running.load(Ordering::Relaxed) {
                     true => Self::reconnect(&connect_string, conn_resp),
                     false => {
-                        println!("Writer: exiting");
+                        println!("Writer: closed, exiting");
                         return
                     }
                 };
@@ -136,7 +136,7 @@ impl ZooKeeper {
                 let reader_sock = match writer_sock.try_clone() {
                     Ok(sock) => sock,
                     Err(e) => {
-                        println!("Writer: Failed to clone socker for Reader: {}", e);
+                        println!("Writer: failed to clone socker for Reader: {}", e);
                         break
                     }
                 };
@@ -154,15 +154,7 @@ impl ZooKeeper {
                     KeeperState::SyncConnected
                 };
 
-                match event_tx_manual.send(
-                    WatchedEvent{
-                        event_type: WatchedEventType::None,
-                        keeper_state: keeper_state,
-                        path: None}
-                ) {
-                    Ok(()) => (),
-                    Err(e) => panic!("Writer: Event died {}", e)
-                }
+                Self::send_watched_event(&event_tx_manual, keeper_state);
 
                 loop {
                     // do we have something to send or do we need to ping?
@@ -179,7 +171,7 @@ impl ZooKeeper {
                                 Ok(()) => (),
                                 Err(e) => {
                                     println!("Writer: failed to send to server, reconnecting {}", e);
-                                    // TODO enqueue a Disconnected event here
+                                    Self::send_watched_event(&event_tx_manual, KeeperState::Disconnected);
                                     break
                                 }
                             }
@@ -191,20 +183,19 @@ impl ZooKeeper {
                             match opcode {
                                 OpCode::CloseSession => {
                                     println!("Writer: exiting");
-                                    // TODO enqueue a Disconnected event here, not sure!
                                     return
                                 },
                                 _ => ()
                             }
                         },
                         _ = ping_timeout.recv() => {
-                            println!("Writer: Pinging {}", writer_sock.peer_addr().unwrap());
+                            println!("Writer: Pinging {:?}", writer_sock.peer_addr());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_buffer();
                             match writer_sock.write_buffer(&ping) {
                                 Ok(()) => (),
                                 Err(e) => {
                                     println!("Writer: failed to ping server {}, trying to reconnect", e);
-                                    // TODO enqueue a Disconnected event here
+                                    Self::send_watched_event(&event_tx_manual, KeeperState::Disconnected);
                                     break
                                 }
                             }
@@ -231,6 +222,7 @@ impl ZooKeeper {
                         Ok(reply) => reply,
                         Err(e) => {
                             println!("Reader: read_reply {}", e);
+                            Self::send_watched_event(&event_tx, KeeperState::Disconnected);
                             break
                         }
                     };
@@ -347,8 +339,18 @@ impl ZooKeeper {
         }
     }
 
+    fn send_watched_event(sender: &Sender<WatchedEvent>,
+                          keeper_state: KeeperState) {
+        match sender.send(WatchedEvent{event_type: WatchedEventType::None,
+                                       keeper_state: keeper_state,
+                                       path: None}) {
+            Ok(()) => (),
+            Err(e) => panic!("Reader/Writer: Event died {}", e)
+        }
+    }
+
     fn xid(&self) -> i32 {
-        self.xid.fetch_add(1, Ordering::SeqCst) as i32
+        self.xid.fetch_add(1, Ordering::Relaxed) as i32
     }
 
     fn request<T: Archive>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
@@ -454,7 +456,7 @@ impl ZooKeeper {
     pub fn close(&self) {
         self.request(OpCode::CloseSession, 0, EmptyRequest);
 
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Relaxed);
     }
 }
 
