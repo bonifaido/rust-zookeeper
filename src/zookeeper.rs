@@ -59,15 +59,9 @@ struct Packet {
     resp_tx: SyncSender<Response>
 }
 
-#[derive(Debug, PartialEq)]
-struct ConnectString {
-    addrs: Vec<SocketAddr>,
-    chroot: String,
-}
-
 #[derive(Clone)]
 pub struct ZooKeeper {
-    chroot: String,
+    chroot: Option<String>,
     xid: Arc<AtomicIsize>,
     running: Arc<AtomicBool>,
     packet_tx: Sender<Packet> // sending Packets from methods to writer task
@@ -96,8 +90,7 @@ impl ZooKeeper {
         let running = Arc::new(AtomicBool::new(true));
         let running1 = running.clone();
 
-        let connect_string = try!(Self::parse_connect_string(connect_string));
-        let chroot = connect_string.chroot.clone();
+        let (addrs, chroot) = try!(Self::parse_connect_string(connect_string));
 
         // Event thread
         thread::spawn(move || {
@@ -124,7 +117,7 @@ impl ZooKeeper {
             loop {
                 println!("Writer: connecting, trying to get new writer_sock");
                 let (new_writer_sock, new_conn_resp) = match running.load(Ordering::Relaxed) {
-                    true => Self::reconnect(&connect_string, conn_resp),
+                    true => Self::reconnect(&addrs, conn_resp),
                     false => {
                         println!("Writer: closed, exiting");
                         return
@@ -257,18 +250,15 @@ impl ZooKeeper {
                      packet_tx: packet_tx})
     }
 
-    fn parse_connect_string(connect_string: &str) -> ZkResult<ConnectString> {
+    fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
         let (chroot, end) = match connect_string.find('/') {
-            Some(i) => {
-                let len = connect_string.len();
-                let j = if connect_string.chars().last().unwrap() == '/' {
-                    len - 1
-                } else {
-                    len
-                };
-                (&connect_string[i..j], i)
+            Some(start) => {
+                match &connect_string[start..connect_string.len()] {
+                    "" | "/" => (None, start),
+                    chroot => (Some(try!(Self::validate_path(chroot)).to_string()), start)
+                }
             },
-            None => ("", connect_string.len())
+            None => (None, connect_string.len())
         };
 
         let mut addrs = Vec::new();
@@ -283,7 +273,7 @@ impl ZooKeeper {
             addrs.push(addr);
         }
 
-        Ok(ConnectString{addrs: addrs, chroot: chroot.to_string()})
+        Ok((addrs, chroot))
     }
 
     fn parse_reply<R: Read>(err: i32, packet: &Packet, buf: &mut R) -> Response {
@@ -307,13 +297,13 @@ impl ZooKeeper {
         }
     }
 
-    fn reconnect(connect_string: &ConnectString, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
+    fn reconnect(addrs: &Vec<SocketAddr>, conn_resp: ConnectResponse) -> (TcpStream, ConnectResponse) {
         let conn_req = ConnectRequest::from(conn_resp, 0).to_buffer();
 
         loop {
-            for host in connect_string.addrs.iter() {
-                println!("Writer: Connecting to {}...", host);
-                match TcpStream::connect(host) {
+            for addr in addrs.iter() {
+                println!("Writer: Connecting to {}...", addr);
+                match TcpStream::connect(addr) {
                     Ok(mut sock) => {
                         match sock.write_buffer(&conn_req) {
                             Ok(write) => write,
@@ -332,7 +322,7 @@ impl ZooKeeper {
                         return (sock, conn_resp)
                     },
                     Err(e) => {
-                        println!("Writer: Failed to connect to {} err: {}", host, e);
+                        println!("Writer: Failed to connect to {} err: {}", addr, e);
                         //thread::sleep_ms(500);
                     }
                 }
@@ -375,10 +365,21 @@ impl ZooKeeper {
         }
     }
 
-    fn path(&self, path: &str) -> ZkResult<String> {
+    fn validate_path(path: &str) -> ZkResult<&str> {
         match path {
             "" => Err(ZkError::BadArguments),
-            path => Ok(self.chroot.clone() + path)
+            path => if path.len() > 1 && path.chars().last() == Some('/') {
+                    Err(ZkError::BadArguments)
+                } else {
+                    Ok(path)
+                }
+        }
+    }
+
+    fn path(&self, path: &str) -> ZkResult<String> {
+        match self.chroot {
+            Some(ref chroot) => Ok(chroot.clone() + try!(Self::validate_path(path))),
+            None => Ok(try!(Self::validate_path(path)).to_string())
         }
     }
 
@@ -469,36 +470,32 @@ impl Drop for ZooKeeper {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConnectString, ZooKeeper};
+    use super::ZooKeeper;
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
-    // TODO This is flaky, host resolving returns the addresses in hectic order, sort?
+    // TODO This is flaky, host resolving happens in a hectic order, sort?
     #[test]
-    fn test_parse_connect_string() {
-        let connect_string = ZooKeeper::parse_connect_string("127.0.0.1:2181,localhost:2181,::1:2181/mesos").unwrap();
-        assert_eq!(connect_string, ConnectString{
-            addrs: vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 2181)),
+    fn parse_connect_string() {
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,localhost:2181,::1:2181/mesos").unwrap();
+        assert_eq!(addrs,
+                   vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 2181)),
                         SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0)),
-                        SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))],
-            chroot: "/mesos".to_string()
-        });
+                        SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
+        assert_eq!(chroot.unwrap(), "/mesos");
 
-        let connect_string = ZooKeeper::parse_connect_string("127.0.0.1:2181/mesos/").unwrap();
-        assert_eq!(connect_string, ConnectString{
-            addrs: vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 2181))],
-            chroot: "/mesos".to_string()
-        });
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("localhost:2181").unwrap();
+        assert_eq!(addrs, vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
+        assert_eq!(chroot, None);
 
-        let connect_string = ZooKeeper::parse_connect_string("localhost:2181").unwrap();
-        assert_eq!(connect_string, ConnectString{
-            addrs: vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))],
-            chroot: "".to_string()
-        });
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("localhost:2181/").unwrap();
+        assert_eq!(addrs, vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
+        assert_eq!(chroot, None);
+    }
 
-        let connect_string = ZooKeeper::parse_connect_string("localhost:2181/").unwrap();
-        assert_eq!(connect_string, ConnectString{
-            addrs: vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))],
-            chroot: "".to_string()
-        });
+    #[test]
+    #[should_panic(expected = "BadArguments")]
+    fn parse_connect_string_fails() {
+        // This fails with ZooKeeper.java: Path must not end with / character
+        ZooKeeper::parse_connect_string("127.0.0.1:2181/mesos/").unwrap();
     }
 }
