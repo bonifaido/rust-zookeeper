@@ -10,10 +10,14 @@ description = "A minimal ZooKeeper client, work in progress"
 readme = "README.md"
 
 [dependencies]
+log = "0.3"
 enum_primitive = "0.0.2"
-num = "0.1.24"
-byteorder = "0.3.9"
+num = "0.1"
+byteorder = "0.3"
 schedule_recv = "0.0.1"
+
+[dev-dependencies]
+log4rs = "0.3"
 
 [features]
 unstable = []

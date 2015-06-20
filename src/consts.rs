@@ -1,8 +1,7 @@
 use std::fmt;
 
 enum_from_primitive! {
-#[allow(missing_copy_implementations)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum ZkError {
     APIError = -100,
     AuthFailed = -115,
@@ -42,7 +41,6 @@ pub mod perms {
     pub const ALL: i32 = READ | WRITE | CREATE | DELETE | ADMIN;
 }
 
-#[allow(missing_copy_implementations)]
 pub enum CreateMode {
     Persistent,
     Ephemeral,
@@ -51,7 +49,6 @@ pub enum CreateMode {
 }
 
 enum_from_primitive! {
-#[allow(missing_copy_implementations)]
 #[derive(Debug)]
 pub enum KeeperState {
     Disconnected = 0,
@@ -64,7 +61,6 @@ pub enum KeeperState {
 }
 
 enum_from_primitive! {
-#[allow(missing_copy_implementations)]
 #[derive(Debug)]
 pub enum WatchedEventType {
     None = -1,

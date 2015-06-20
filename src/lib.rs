@@ -1,9 +1,11 @@
 #![feature(duration, mpsc_select)]
 #![deny(unused_mut)]
+extern crate byteorder;
 #[macro_use]
 extern crate enum_primitive;
 extern crate num;
-extern crate byteorder;
+#[macro_use]
+extern crate log;
 extern crate schedule_recv;
 
 pub use consts::*;

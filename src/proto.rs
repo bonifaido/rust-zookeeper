@@ -114,7 +114,6 @@ impl Archive for Acl {
     }
 }
 
-#[allow(missing_copy_implementations)]
 #[derive(Debug)]
 pub struct Stat {
     pub czxid: i64,
@@ -184,7 +183,7 @@ impl Archive for ConnectRequest {
 #[derive(Debug)]
 pub struct ConnectResponse {
     protocol_version: i32,
-    timeout: i32,
+    pub timeout: i32,
     session_id: i64,
     passwd: Vec<u8>,
     pub read_only: bool

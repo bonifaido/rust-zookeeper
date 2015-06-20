@@ -1,21 +1,24 @@
 #![feature(duration)]
 extern crate zookeeper;
+#[macro_use]
+extern crate log;
+extern crate log4rs;
 
 use std::time::Duration;
 use std::thread;
 use std::io;
-use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZkResult, ZooKeeper};
+use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::perms;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
     fn handle(&self, e: &WatchedEvent) {
-        println!("{:?}", e)
+        info!("{:?}", e)
     }
 }
 
-fn zk_example() -> ZkResult<()> {
-    let zk = try!(ZooKeeper::connect("localhost:2181/", Duration::from_secs(5), LoggingWatcher));
+fn zk_example() {
+    let zk = ZooKeeper::connect("localhost:2181/", Duration::from_secs(5), LoggingWatcher).unwrap();
 
     let mut tmp = String::new();
     println!("connecting... press any to continue");
@@ -74,17 +77,25 @@ fn zk_example() -> ZkResult<()> {
 
         // And operations return error after closed
         match zk.exists("/test", false) {
-            Err(err) => println!("Usage after closed: {:?}", err),
+            Err(err) => println!("Usage after closed should error: {:?}", err),
             Ok(_) => panic!("Shouldn't happen")
         }
     });
 
     println!("press enter to exit example");
     io::stdin().read_line(&mut tmp).unwrap();
+}
 
-    Ok(())
+fn init_logging() {
+    let root = log4rs::config::Root::builder(log::LogLevelFilter::Debug)
+               .appender("stdout".to_string());
+    let console = Box::new(log4rs::appender::ConsoleAppender::builder().build());
+    let config = log4rs::config::Config::builder(root.build())
+                 .appender(log4rs::config::Appender::builder("stdout".to_string(), console).build());
+    log4rs::init_config(config.build().unwrap()).unwrap();
 }
 
 fn main() {
-    zk_example().unwrap();
+    init_logging();
+    zk_example();
 }
