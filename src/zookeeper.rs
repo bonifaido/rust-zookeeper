@@ -110,7 +110,6 @@ impl ZooKeeper {
 
         // Writer thread
         thread::spawn(move || {
-            let ping_timeout = periodic_ms(timeout.secs() as u32 * 1000);
             let mut conn_resp = ConnectResponse::initial(timeout);
 
             loop {
@@ -122,13 +121,15 @@ impl ZooKeeper {
                         return
                     }
                 };
+                
                 conn_resp = new_conn_resp;
 
-                // Session has expired
                 if conn_resp.timeout <= 0 {
                     Self::send_watched_event(&event_tx_manual, KeeperState::Expired);
                     return
                 }
+
+                debug!("Writer: negotiated session timeout: {}ms", conn_resp.timeout );
 
                 let reader_sock = match writer_sock.try_clone() {
                     Ok(sock) => sock,
@@ -152,6 +153,8 @@ impl ZooKeeper {
                 };
 
                 Self::send_watched_event(&event_tx_manual, keeper_state);
+
+                let ping_timeout = periodic_ms(conn_resp.timeout as u32 * 2 / 3);
 
                 loop {
                     // do we have something to send or do we need to ping?
@@ -306,7 +309,7 @@ impl ZooKeeper {
 
         loop {
             for addr in addrs.iter() {
-                debug!("Writer: Connecting to {}...", addr);
+                debug!("Writer: connecting to {}...", addr);
                 match TcpStream::connect(addr) {
                     Ok(mut sock) => {
                         match sock.write_buffer(&conn_req) {
@@ -326,7 +329,7 @@ impl ZooKeeper {
                         return (sock, conn_resp)
                     },
                     Err(e) => {
-                        debug!("Writer: Failed to connect to {} err: {}", addr, e);
+                        debug!("Writer: failed to connect to {} err: {}", addr, e);
                     }
                 }
             }
