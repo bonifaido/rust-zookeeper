@@ -92,6 +92,8 @@ impl ZooKeeper {
 
         let (addrs, chroot) = try!(Self::parse_connect_string(connect_string));
 
+        debug!("Initiating connection to {}", connect_string);
+
         // Event thread
         thread::spawn(move || {
             loop {
@@ -189,7 +191,7 @@ impl ZooKeeper {
                             }
                         },
                         _ = ping_timeout.recv() => {
-                            debug!("Writer: Pinging {:?}", writer_sock.peer_addr());
+                            debug!("Writer: pinging {:?}", writer_sock.peer_addr());
                             let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_buffer();
                             match writer_sock.write_buffer(&ping) {
                                 Ok(()) => (),
@@ -231,7 +233,7 @@ impl ZooKeeper {
                             Ok(()) => (),
                             Err(e) => panic!("Reader: Event died {}", e)
                         },
-                        -2 => debug!("Reader: got ping event"),
+                        -2 => debug!("Reader: received ping response"),
                         _xid => {
                             let packet = match written_rx.recv() {
                                 Ok(packet) => packet,
@@ -384,7 +386,10 @@ impl ZooKeeper {
 
     fn path(&self, path: &str) -> ZkResult<String> {
         match self.chroot {
-            Some(ref chroot) => Ok(chroot.clone() + try!(Self::validate_path(path))),
+            Some(ref chroot) => match path {
+                "/" => Ok(chroot.clone()),
+                path => Ok(chroot.clone() + try!(Self::validate_path(path)))
+            },
             None => Ok(try!(Self::validate_path(path)).to_string())
         }
     }
@@ -430,6 +435,7 @@ impl ZooKeeper {
     }
 
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
+        debug!("get_children {}", try!(self.path(path)));
         let req = GetChildrenRequest{path: try!(self.path(path)), watch: watch};
 
         let result = self.request(OpCode::GetChildren, self.xid(), req);
