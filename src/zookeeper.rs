@@ -435,7 +435,6 @@ impl ZooKeeper {
     }
 
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
-        debug!("get_children {}", try!(self.path(path)));
         let req = GetChildrenRequest{path: try!(self.path(path)), watch: watch};
 
         let result = self.request(OpCode::GetChildren, self.xid(), req);
