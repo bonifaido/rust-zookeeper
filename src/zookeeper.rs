@@ -194,7 +194,7 @@ impl ZooKeeper {
                             match writer_sock.write_buffer(&ping) {
                                 Ok(()) => (),
                                 Err(e) => {
-                                    println!("Writer: failed to ping server {}, trying to reconnect", e);
+                                    println!("Writer: failed to ping server {}, reconnecting", e);
                                     Self::send_watched_event(&event_tx_manual, KeeperState::Disconnected);
                                     break
                                 }
@@ -333,6 +333,7 @@ impl ZooKeeper {
                     },
                     Err(e) => {
                         println!("Writer: Failed to connect to {} err: {}", host, e);
+                        //thread::sleep_ms(500);
                     }
                 }
             }
