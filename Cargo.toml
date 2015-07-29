@@ -15,6 +15,7 @@ enum_primitive = "0.0.2"
 num = "0.1"
 byteorder = "0.3"
 schedule_recv = "0.0.1"
+lazy_static = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"

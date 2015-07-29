@@ -7,8 +7,8 @@ extern crate log4rs;
 use std::time::Duration;
 use std::thread;
 use std::io;
-use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
-use zookeeper::perms;
+use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
+use zookeeper::acls;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -24,14 +24,11 @@ fn zk_example() {
     println!("connecting... press any to continue");
     io::stdin().read_line(&mut tmp).unwrap();
 
-    let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
-    let acl2 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
-
     let auth = zk.add_auth("digest", vec![1,2,3,4]);
 
     println!("authenticated -> {:?}", auth);
 
-    let path = zk.create("/test", vec![1,2], acl1, CreateMode::Ephemeral);
+    let path = zk.create("/test", vec![1,2], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
 
     println!("created -> {:?}", path);
 
@@ -47,7 +44,7 @@ fn zk_example() {
 
     println!("get_acl -> {:?}", get_acl);
 
-    let set_acl = zk.set_acl("/test", acl2, -1);
+    let set_acl = zk.set_acl("/test", acls::OPEN_ACL_UNSAFE.clone(), -1);
 
     println!("set_acl -> {:?}", set_acl);
 

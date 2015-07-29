@@ -101,7 +101,7 @@ impl <R: Read> ZkReplyRead for R {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct Acl {
     pub perms: i32,
     pub scheme: String,
