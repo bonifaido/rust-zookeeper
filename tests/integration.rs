@@ -3,8 +3,8 @@
 extern crate zookeeper;
 extern crate env_logger;
 
-use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
-use zookeeper::perms;
+use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
+use zookeeper::acls;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
@@ -58,8 +58,7 @@ fn simple_integration_test() {
 
 
     // Do the tests
-    let acl1 = vec![Acl{perms: perms::ALL, scheme: "world".to_string(), id: "anyone".to_string()}];
-    let create = client.create("/test", vec![8,8], acl1, CreateMode::Ephemeral);
+    let create = client.create("/test", vec![8,8], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
 
     assert_eq!(create.ok(), Some("/test".to_string()));
 
