@@ -15,8 +15,8 @@ I have plans to implement recipes and more complex [Curator][curator] like logic
 Put this in your Cargo.toml:
 
 ```ini
-[dependencies.zookeeper]
-git = "0.1.0"
+[dependencies]
+zookeeper = "0.1.1"
 ```
 
 And this in your crate root:
