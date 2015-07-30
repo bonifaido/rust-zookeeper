@@ -58,8 +58,10 @@ impl <R: Read> BufferReader for R {
 
 impl <W: Write> BufferWriter<> for W {
     fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()> {
-        try!(self.write_i32::<BigEndian>(buffer.len() as i32));
-        self.write_all(buffer)
+        let mut full_buffer = Vec::new();
+        try!(full_buffer.write_i32::<BigEndian>(buffer.len() as i32));
+        try!(full_buffer.write_all(buffer));
+        self.write_all(&full_buffer)
     }
 }
 
