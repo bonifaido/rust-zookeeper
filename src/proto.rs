@@ -13,10 +13,26 @@ pub trait WriteTo {
 
     #[allow(unused_must_use)]
     fn to_buffer(&self) -> Vec<u8> {
-        let mut w = Vec::new();
-        self.write_to(&mut w); // should never fail
-        w
+        let mut buf = Cursor::new(Vec::new());
+        buf.set_position(4);
+        self.write_to(&mut buf);
+        let len = buf.position() - 4;
+        buf.set_position(0);
+        buf.write_i32::<BigEndian>(len as i32);
+        buf.into_inner()
     }
+}
+
+#[allow(unused_must_use)]
+pub fn request_to_buffer<Request: WriteTo>(rh: RequestHeader, req: Request) -> Vec<u8> {
+    let mut buf = Cursor::new(Vec::new());
+    buf.set_position(4);
+    rh.write_to(&mut buf);
+    req.write_to(&mut buf);
+    let len = buf.position() - 4;
+    buf.set_position(0);
+    buf.write_i32::<BigEndian>(len as i32);
+    buf.into_inner()
 }
 
 trait StringReader: Read {
@@ -25,10 +41,6 @@ trait StringReader: Read {
 
 pub trait BufferReader: Read {
     fn read_buffer(&mut self) -> Result<Vec<u8>>;
-}
-
-pub trait BufferWriter: Write {
-    fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()>;
 }
 
 pub trait ZkReplyRead: Read {
@@ -42,7 +54,7 @@ impl <R: Read> StringReader for R {
     }
 }
 
-// A buffer is an u8 string prefixed with it's length as u32
+// A buffer is an u8 string prefixed with it's length as i32
 impl <R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = try!(self.read_i32::<BigEndian>()) as usize;
@@ -53,15 +65,6 @@ impl <R: Read> BufferReader for R {
         } else {
             Err(Error::new(ErrorKind::Other, "read_buffer failed"))
         }
-    }
-}
-
-impl <W: Write> BufferWriter<> for W {
-    fn write_buffer(&mut self, buffer: &Vec<u8>) -> Result<()> {
-        let mut full_buffer = Vec::new();
-        try!(full_buffer.write_i32::<BigEndian>(buffer.len() as i32));
-        try!(full_buffer.write_all(buffer));
-        self.write_all(&full_buffer)
     }
 }
 

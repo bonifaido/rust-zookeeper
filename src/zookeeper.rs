@@ -1,7 +1,7 @@
 use consts::*;
 use proto::*;
 
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::result;
 use std::sync::Arc;
@@ -31,6 +31,10 @@ macro_rules! fetch_empty_result(
         }
     )
 );
+
+lazy_static! {
+    static ref PING: Vec<u8> = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_buffer();
+}
 
 #[derive(Clone, Copy, Debug)]
 enum OpCode {
@@ -169,7 +173,7 @@ impl ZooKeeper {
                                     return
                                 }
                             };
-                            match writer_sock.write_buffer(&packet.data) {
+                            match writer_sock.write_all(&packet.data) {
                                 Ok(()) => (),
                                 Err(e) => {
                                     debug!("Writer: failed to send to server, reconnecting {}", e);
@@ -192,8 +196,7 @@ impl ZooKeeper {
                         },
                         _ = ping_timeout.recv() => {
                             debug!("Writer: pinging {:?}", writer_sock.peer_addr());
-                            let ping = RequestHeader{xid: -2, opcode: OpCode::Ping as i32}.to_buffer();
-                            match writer_sock.write_buffer(&ping) {
+                            match writer_sock.write_all(&PING) {
                                 Ok(()) => (),
                                 Err(e) => {
                                     debug!("Writer: failed to ping server {}, reconnecting", e);
@@ -314,7 +317,7 @@ impl ZooKeeper {
                 debug!("Writer: connecting to {}...", addr);
                 match TcpStream::connect(addr) {
                     Ok(mut sock) => {
-                        match sock.write_buffer(&conn_req) {
+                        match sock.write_all(&conn_req) {
                             Ok(write) => write,
                             Err(_) => continue
                         }
@@ -355,9 +358,7 @@ impl ZooKeeper {
     fn request<T: WriteTo>(&self, opcode: OpCode, xid: i32, req: T) -> Response {
         let rh = RequestHeader{xid: xid, opcode: opcode as i32};
 
-        let mut buf = Vec::new();
-        let _ = rh.write_to(&mut buf);
-        let _ = req.write_to(&mut buf);
+        let buf = request_to_buffer(rh, req);
 
         let (resp_tx, resp_rx) = sync_channel(0);
         let packet = Packet{opcode: opcode, data: buf, resp_tx: resp_tx};
