@@ -488,18 +488,17 @@ mod tests {
     // TODO This is flaky, host resolving happens in a hectic order, sort?
     #[test]
     fn parse_connect_string() {
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,localhost:2181,::1:2181/mesos").unwrap();
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,::1:2181/mesos").unwrap();
         assert_eq!(addrs,
                    vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 2181)),
-                        SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0)),
                         SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
         assert_eq!(chroot.unwrap(), "/mesos");
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("localhost:2181").unwrap();
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181").unwrap();
         assert_eq!(addrs, vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
         assert_eq!(chroot, None);
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("localhost:2181/").unwrap();
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181/").unwrap();
         assert_eq!(addrs, vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,1), 2181, 0, 0))]);
         assert_eq!(chroot, None);
     }
