@@ -208,9 +208,11 @@ pub struct ConnectResponse {
 
 impl ConnectResponse {
     pub fn initial(timeout: Duration) -> ConnectResponse {
+        let millis = timeout.as_secs() as i32 * 1000
+                   + timeout.subsec_nanos() as i32 / 1000000;
         ConnectResponse{
             protocol_version: 0,
-            timeout: timeout.secs() as i32 * 1000,
+            timeout: millis,
             session_id: 0,
             passwd: [0;16].to_vec(),
             read_only: false}

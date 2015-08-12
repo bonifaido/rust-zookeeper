@@ -1,4 +1,4 @@
-#![feature(duration, mpsc_select)]
+#![feature(mpsc_select)]
 #![deny(unused_mut)]
 extern crate byteorder;
 #[macro_use]

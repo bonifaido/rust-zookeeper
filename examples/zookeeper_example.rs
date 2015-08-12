@@ -1,4 +1,4 @@
-#![feature(duration)]
+#![deny(unused_mut)]
 extern crate zookeeper;
 #[macro_use]
 extern crate log;
