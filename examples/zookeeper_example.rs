@@ -4,15 +4,16 @@ extern crate zookeeper;
 extern crate log;
 extern crate log4rs;
 
+use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use std::thread;
-use std::io;
 use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
-    fn handle(&self, e: &WatchedEvent) {
+    fn handle(&mut self, e: &WatchedEvent) {
         info!("{:?}", e)
     }
 }
@@ -21,8 +22,6 @@ fn zk_example() {
     let zk = ZooKeeper::connect("localhost:2181/", Duration::from_secs(5), LoggingWatcher).unwrap();
 
     let mut tmp = String::new();
-    println!("connecting... press any to continue");
-    io::stdin().read_line(&mut tmp).unwrap();
 
     let auth = zk.add_auth("digest", vec![1,2,3,4]);
 
@@ -68,13 +67,13 @@ fn zk_example() {
     io::stdin().read_line(&mut tmp).unwrap();
 
     // The client can be shared between tasks
-    let zk2 = zk.clone();
+    let zk = Arc::new(zk);
     thread::spawn(move || {
-        zk2.close();
+        zk.close().unwrap();
 
         // And operations return error after closed
         match zk.exists("/test", false) {
-            Err(err) => println!("Usage after closed should error: {:?}", err),
+            Err(err) => println!("Usage after closed should end up with error: {:?}", err),
             Ok(_) => panic!("Shouldn't happen")
         }
     });

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
-    fn handle(&self, e: &WatchedEvent) {
+    fn handle(&mut self, e: &WatchedEvent) {
         println!("{:?}", e)
     }
 }
@@ -58,30 +58,33 @@ fn simple_integration_test() {
 
     // Do the tests
     let create = client.create("/test", vec![8,8], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
-
     assert_eq!(create.ok(), Some("/test".to_string()));
 
 
     let exists = client.exists("/test", true);
-
     assert!(exists.is_ok());
 
 
-    let children = client.get_children("/", true);
+    // Set/Get Big-Data(tm), greater than a TCP chunk
+    let data = vec![7; 2048];
+    let set_data = client.set_data("/test", data.clone(), -1);
+    assert!(set_data.is_ok());
+    let get_data = client.get_data("/test", false);
+    assert!(get_data.is_ok());
+    assert_eq!(get_data.unwrap().0, data);
 
+    let children = client.get_children("/", true);
     assert!(children.is_ok());
 
     let mut sorted_children = children.unwrap();
     sorted_children.sort();
-
     assert_eq!(sorted_children, vec!["test".to_string(), "zookeeper".to_string()]);
 
 
     // After closing the client all operations return Err
-    client.close();
+    client.close().unwrap();
 
     let exists = client.exists("/test", true);
-
     assert!(exists.is_err());
 
 

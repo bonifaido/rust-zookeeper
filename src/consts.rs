@@ -1,5 +1,3 @@
-use std::fmt;
-
 enum_from_primitive! {
     #[derive(Debug)]
     pub enum ZkError {
@@ -25,13 +23,6 @@ enum_from_primitive! {
     }
 }
 
-// TODO For me this is ugly compared to the previous #[derive(Show)]
-impl fmt::Display for ZkError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self)
-    }
-}
-
 pub enum CreateMode {
     Persistent,
     Ephemeral,
@@ -40,6 +31,7 @@ pub enum CreateMode {
 }
 
 enum_from_primitive! {
+    /// Enumeration of states the client may be at a Watcher Event
     #[derive(Debug)]
     pub enum KeeperState {
         Disconnected = 0,
@@ -62,4 +54,31 @@ enum_from_primitive! {
         DataWatchRemoved = 5,
         ChildWatchRemoved = 6
     }
+}
+
+/// Enumeration of states the client may be at any time
+#[derive(Debug, PartialEq)]
+pub enum ZkState {
+    Associating,
+    AuthFailed,
+    Closed,
+    Connected,
+    ConnectedReadOnly,
+    Connecting,
+    NotConnected
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OpCode {
+    Auth = 100,
+    Create = 1,
+    Delete = 2,
+    Exists = 3,
+    GetAcl = 6,
+    SetAcl = 7,
+    GetChildren = 8,
+    GetData = 4,
+    SetData = 5,
+    Ping = 11,
+    CloseSession = -11
 }

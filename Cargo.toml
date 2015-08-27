@@ -12,12 +12,13 @@ readme = "README.md"
 keywords = ["zookeeper", "distributed", "coordination"]
 
 [dependencies]
-log = "0.3"
-enum_primitive = "0.0.2"
-num = "0.1"
 byteorder = "0.3"
-schedule_recv = "0.0.1"
+bytes = "0.2"
+enum_primitive = "0.1.0"
 lazy_static = "0.1"
+log = "0.3"
+mio = {git = "https://github.com/carllerche/mio.git"}
+num = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"

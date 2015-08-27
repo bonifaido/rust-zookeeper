@@ -1,8 +1,9 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use consts::{KeeperState, WatchedEventType, ZkError};
+use consts::{KeeperState, OpCode, WatchedEventType};
 use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
-use std::time::Duration;
 use num::FromPrimitive;
+
+pub type ByteBuf = Cursor<Vec<u8>>;
 
 pub trait ReadFrom {
     fn read_from<R: Read>(read: &mut R) -> Self;
@@ -12,19 +13,20 @@ pub trait WriteTo {
     fn write_to(&self, writer: &mut Write) -> Result<()>;
 
     #[allow(unused_must_use)]
-    fn to_buffer(&self) -> Vec<u8> {
+    fn to_len_prefixed_buf(&self) -> ByteBuf {
         let mut buf = Cursor::new(Vec::new());
         buf.set_position(4);
         self.write_to(&mut buf);
         let len = buf.position() - 4;
         buf.set_position(0);
         buf.write_i32::<BigEndian>(len as i32);
-        buf.into_inner()
+        buf.set_position(0);
+        buf
     }
 }
 
 #[allow(unused_must_use)]
-pub fn request_to_buffer<Request: WriteTo>(rh: RequestHeader, req: Request) -> Vec<u8> {
+pub fn to_len_prefixed_buf<Request: WriteTo>(rh: RequestHeader, req: Request) -> ByteBuf {
     let mut buf = Cursor::new(Vec::new());
     buf.set_position(4);
     rh.write_to(&mut buf);
@@ -32,7 +34,8 @@ pub fn request_to_buffer<Request: WriteTo>(rh: RequestHeader, req: Request) -> V
     let len = buf.position() - 4;
     buf.set_position(0);
     buf.write_i32::<BigEndian>(len as i32);
-    buf.into_inner()
+    buf.set_position(0);
+    buf
 }
 
 trait StringReader: Read {
@@ -41,10 +44,6 @@ trait StringReader: Read {
 
 pub trait BufferReader: Read {
     fn read_buffer(&mut self) -> Result<Vec<u8>>;
-}
-
-pub trait ZkReplyRead: Read {
-    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)>;
 }
 
 impl <R: Read> StringReader for R {
@@ -95,14 +94,6 @@ impl <T: WriteTo> WriteTo for Vec<T> {
             }
         }
         res
-    }
-}
-
-impl <R: Read> ZkReplyRead for R {
-    fn read_reply(&mut self) -> Result<(ReplyHeader, Cursor<Vec<u8>>)> {
-        let buf = try!(self.read_buffer());
-        let mut reader = Cursor::new(buf);
-        Ok((ReplyHeader::read_from(&mut reader), reader))
     }
 }
 
@@ -177,7 +168,7 @@ impl ConnectRequest {
         ConnectRequest{
             protocol_version: conn_resp.protocol_version,
             last_zxid_seen: last_zxid_seen,
-            timeout: conn_resp.timeout,
+            timeout: conn_resp.timeout as i32,
             session_id: conn_resp.session_id,
             passwd: conn_resp.passwd,
             read_only: conn_resp.read_only}
@@ -200,19 +191,17 @@ impl WriteTo for ConnectRequest {
 #[derive(Debug)]
 pub struct ConnectResponse {
     protocol_version: i32,
-    pub timeout: i32,
+    pub timeout: u64, // is handled as i32
     session_id: i64,
     passwd: Vec<u8>,
     pub read_only: bool
 }
 
 impl ConnectResponse {
-    pub fn initial(timeout: Duration) -> ConnectResponse {
-        let millis = timeout.as_secs() as i32 * 1000
-                   + timeout.subsec_nanos() as i32 / 1000000;
+    pub fn initial(timeout: u64) -> ConnectResponse {
         ConnectResponse{
             protocol_version: 0,
-            timeout: millis,
+            timeout: timeout,
             session_id: 0,
             passwd: [0;16].to_vec(),
             read_only: false}
@@ -223,7 +212,7 @@ impl ReadFrom for ConnectResponse {
     fn read_from<R: Read>(reader: &mut R) -> ConnectResponse {
         ConnectResponse{
             protocol_version: reader.read_i32::<BigEndian>().unwrap(),
-            timeout: reader.read_i32::<BigEndian>().unwrap(),
+            timeout: reader.read_i32::<BigEndian>().unwrap() as u64,
             session_id: reader.read_i64::<BigEndian>().unwrap(),
             passwd: reader.read_buffer().unwrap(),
             read_only: reader.read_u8().unwrap() != 0}
@@ -232,14 +221,14 @@ impl ReadFrom for ConnectResponse {
 
 pub struct RequestHeader {
     pub xid: i32,
-    pub opcode: i32
+    pub opcode: OpCode
 }
 
 impl WriteTo for RequestHeader {
     #[allow(unused_must_use)]
     fn write_to(&self, writer: &mut Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.xid));
-        try!(writer.write_i32::<BigEndian>(self.opcode));
+        try!(writer.write_i32::<BigEndian>(self.opcode as i32));
         Ok(())
     }
 }
@@ -317,6 +306,7 @@ impl WriteTo for StringAndBoolRequest {
 }
 
 pub type ExistsRequest = StringAndBoolRequest;
+pub type ExistsResponse = StatResponse;
 
 pub struct StatResponse {
     pub stat: Stat
@@ -371,6 +361,8 @@ impl WriteTo for SetAclRequest {
     }
 }
 
+pub type SetAclResponse = StatResponse;
+
 pub struct SetDataRequest {
     pub path: String,
     pub data: Vec<u8>,
@@ -386,6 +378,8 @@ impl WriteTo for SetDataRequest {
         Ok(())
     }
 }
+
+pub type SetDataResponse = StatResponse;
 
 pub type GetChildrenRequest = StringAndBoolRequest;
 
@@ -434,9 +428,16 @@ impl WriteTo for AuthRequest {
 }
 
 pub struct EmptyRequest;
+pub struct EmptyResponse;
 
 impl WriteTo for EmptyRequest {
     fn write_to(&self, _: &mut Write) -> Result<()> { Ok(()) }
+}
+
+impl ReadFrom for EmptyResponse {
+    fn read_from<R: Read>(_: &mut R) -> EmptyResponse {
+        EmptyResponse
+    }
 }
 
 #[derive(Debug)]
@@ -456,18 +457,4 @@ impl ReadFrom for WatchedEvent {
             keeper_state: FromPrimitive::from_i32(state).unwrap(),
             path: Some(path)}
     }
-}
-
-pub enum Response {
-    Auth,
-    Close,
-    Create(CreateResponse),
-    Delete,
-    Error(ZkError),
-    Exists(StatResponse),
-    GetAcl(GetAclResponse),
-    GetChildren(GetChildrenResponse),
-    GetData(GetDataResponse),
-    SetData(StatResponse),
-    SetAcl(StatResponse)
 }
