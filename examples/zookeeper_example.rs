@@ -2,7 +2,7 @@
 extern crate zookeeper;
 #[macro_use]
 extern crate log;
-extern crate log4rs;
+extern crate env_logger;
 
 use std::io;
 use std::sync::Arc;
@@ -82,16 +82,7 @@ fn zk_example() {
     io::stdin().read_line(&mut tmp).unwrap();
 }
 
-fn init_logging() {
-    let root = log4rs::config::Root::builder(log::LogLevelFilter::Debug)
-               .appender("stdout".to_string());
-    let console = Box::new(log4rs::appender::ConsoleAppender::builder().build());
-    let config = log4rs::config::Config::builder(root.build())
-                 .appender(log4rs::config::Appender::builder("stdout".to_string(), console).build());
-    log4rs::init_config(config.build().unwrap()).unwrap();
-}
-
 fn main() {
-    init_logging();
+    env_logger::init().unwrap();
     zk_example();
 }

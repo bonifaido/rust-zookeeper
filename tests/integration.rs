@@ -65,8 +65,8 @@ fn simple_integration_test() {
     assert!(exists.is_ok());
 
 
-    // Set/Get Big-Data(tm), greater than a TCP chunk
-    let data = vec![7; 2048];
+    // Set/Get Big-Data(tm)
+    let data = vec![7; 1024 * 1000];
     let set_data = client.set_data("/test", data.clone(), -1);
     assert!(set_data.is_ok());
     let get_data = client.get_data("/test", false);

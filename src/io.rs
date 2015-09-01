@@ -1,8 +1,8 @@
 use consts::{OpCode, ZkError, ZkState};
 use proto::{ByteBuf, ConnectRequest, ConnectResponse, ReadFrom, ReplyHeader, RequestHeader, WriteTo};
 
-use byteorder::{ReadBytesExt, BigEndian};
-use bytes::Buf;
+use byteorder::{BigEndian, ByteOrder};
+use bytes::{Buf, RingBuf};
 use mio::{EventLoop, EventSet, Handler, PollOpt, Sender, Timeout, Token, TryRead, TryWrite};
 use mio::tcp::TcpStream;
 use std::collections::VecDeque;
@@ -13,13 +13,13 @@ use std::net::SocketAddr;
 use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
-const ZK: Token = Token(0);
+const ZK: Token = Token(1);
 
 lazy_static! {
-    static ref PING: ByteBuf = RequestHeader{xid: -2, opcode: OpCode::Ping}.to_len_prefixed_buf();
+    static ref PING: ByteBuf =
+    RequestHeader{xid: -2, opcode: OpCode::Ping}.to_len_prefixed_buf().unwrap();
 }
 
-#[derive(Clone)]
 pub struct RawRequest {
     pub opcode: OpCode,
     pub data: ByteBuf,
@@ -58,8 +58,7 @@ struct ZkHandler {
     hosts: Hosts,
     buffer: VecDeque<RawRequest>,
     inflight: VecDeque<RawRequest>,
-    response: Vec<u8>,
-    response_len: usize,
+    response: RingBuf,
     timeout: Option<Timeout>,
     timeout_ms: u64,
     event_sender: Sender<RawResponse>,
@@ -73,8 +72,7 @@ impl ZkHandler {
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
             inflight: VecDeque::new(),
-            response: vec![0; 1500],
-            response_len: 0,
+            response: RingBuf::new(1024 * 1024), // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
             timeout: None,
             timeout_ms: timeout_ms,
             event_sender: event_sender
@@ -85,50 +83,67 @@ impl ZkHandler {
         event_loop.register_opt(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot()).unwrap();
     }
 
-    fn read_response_len(&mut self) -> usize {
-        match self.sock.read_i32::<BigEndian>() {
-            Ok(len) => {
-                debug!("Response, len = {:?}", len);
-                len as usize
-            }
-            Err(e) => {
-                error!("Failed to read response len {:?}", e);
-                0
-            }
-        }
-    }
-
     fn handle_response(&mut self, event_loop: &mut EventLoop<Self>) {
-        debug!("handle_response [{}] {:?}", self.response_len, &self.response[..self.response_len]);
-        let mut data = Cursor::new(self.response.clone()); // TODO
-        if self.state != ZkState::Closed {
-            let header = ReplyHeader::read_from(&mut data);
-            let response = RawResponse{header: header, data: data};
-            match response.header.xid {
-                -1 => {
-                    debug!("handle_response Got a watch event!");
-                    self.event_sender.send(response).unwrap();
-                },
-                -2 => {
-                    debug!("handle_response Got a ping response!")
-                },
-                _ => match self.inflight.pop_front() {
-                    Some(ref request) => {
-                        Self::send_response(request, response);
-                        if request.opcode == OpCode::CloseSession {
-                            self.state = ZkState::Closed;
-                            event_loop.shutdown();
-                        }
-                    },
-                    None => panic!("Shouldn't happen, no inflight request")
-                }
+        loop {
+            if self.response.remaining() <= 4 {
+                return
             }
-        } else {
-            self.inflight.pop_front(); // drop the request
-            let conn_resp = ConnectResponse::read_from(&mut data);
-            info!("Connected: {:?}", conn_resp);
-            self.timeout_ms = conn_resp.timeout;
-            self.state = ZkState::Connected;
+            let len = BigEndian::read_i32(&self.response.bytes()[..4]) as usize;
+
+            debug!("response chunk len = {} buf len is {}", len, self.response.bytes().len());
+
+            if self.response.remaining() - 4 < len {
+                return
+            } else {
+
+                self.response.advance(4);
+
+                {
+                    let mut data = Cursor::new(&self.response.bytes()[..len]);
+
+                    debug!("handle_response in {:?} state [{}]", self.state, data.bytes().len());
+
+                    // Could be moved to a handle_data() function
+                    // or this whole stuff could be move to an Iterator
+                    if self.state != ZkState::NotConnected {
+                        let header = match ReplyHeader::read_from(&mut data) {
+                            Ok(header) => header,
+                            Err(e) => panic!("Failed to parse ReplyHeader {:?}", e) // TODO skip this chunk
+                        };
+                        let response = RawResponse{header: header, data: Cursor::new(data.bytes().to_vec())}; // TODO COPY!
+                        match response.header.xid {
+                            -1 => {
+                                debug!("handle_response Got a watch event!");
+                                self.event_sender.send(response).unwrap();
+                            },
+                            -2 => {
+                                debug!("handle_response Got a ping response!");
+                            },
+                            _ => match self.inflight.pop_front() {
+                                Some(ref request) => {
+                                    Self::send_response(request, response);
+                                    if request.opcode == OpCode::CloseSession {
+                                        self.state = ZkState::Closed;
+                                        event_loop.shutdown();
+                                    }
+                                },
+                                None => panic!("Shouldn't happen, no inflight request")
+                            }
+                        }
+                    } else {
+                        self.inflight.pop_front(); // drop the connect request
+                        let conn_resp = match ConnectResponse::read_from(&mut data) {
+                            Ok(conn_resp) => conn_resp,
+                            Err(e) => panic!("Failed to parse ConnectResponse {:?}", e) // TODO skip this chunk
+                        };
+                        info!("Connected: {:?}", conn_resp);
+                        self.timeout_ms = conn_resp.timeout;
+                        self.state = ZkState::Connected;
+                    }
+                }
+                
+                self.response.advance(len);
+            }
         }
     }
 
@@ -142,14 +157,22 @@ impl ZkHandler {
         }
     }
 
+    fn clear_ping_timeout(&mut self, event_loop: &mut EventLoop<Self>) {
+        if let Some(timeout) = self.timeout {
+            event_loop.clear_timeout(timeout);
+        }
+    }
+
     fn reconnect(&mut self, event_loop: &mut EventLoop<Self>) {
         info!("Connecting to new server");
 
         self.buffer.clear(); // drop all requests
-        // self.response.clear();
-        self.response_len = 0;
 
-        self.state = ZkState::Connecting;
+        self.response.mark(); self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
+
+        //self.state = ZkState::Connecting;
+
+        self.clear_ping_timeout(event_loop);
 
         self.sock = TcpStream::connect(&self.hosts.next()).unwrap();
         
@@ -162,7 +185,7 @@ impl ZkHandler {
 
     fn connect_request(&self) -> RawRequest {
         let conn_req = ConnectRequest::from(ConnectResponse::initial(self.timeout_ms), 0);
-        let buf = conn_req.to_len_prefixed_buf();
+        let buf = conn_req.to_len_prefixed_buf().unwrap();
         RawRequest{opcode: OpCode::Auth, data: buf, listener: None}
     }
 }
@@ -172,49 +195,49 @@ impl Handler for ZkHandler {
     type Timeout = ();
 
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        // It is not sure that we need to write, but we always need to read, because of watches
+        // Not sure that we need to write, but we always need to read, because of watches
         let mut next_events = EventSet::all();
         next_events.remove(EventSet::writable());
 
         debug!("ready {:?} {:?}", token, events);
         if events.is_writable() {
-            if let Some(mut request) = self.buffer.pop_front() {
-                let written = self.sock.try_write_buf(&mut request.data).unwrap();
-                debug!("Written {:?} bytes", written);
-                if let Some(timeout) = self.timeout {
-                    event_loop.clear_timeout(timeout);
-                }
-                if request.data.has_remaining() {
-                    self.buffer.push_front(request);
-                } else {
-                    self.inflight.push_back(request);
-                }
-                if !self.buffer.is_empty() {
-                    // Output buffer still has content, so we need to write again!
-                    next_events.insert(EventSet::writable());
-                } else {
-                    self.timeout = Some(event_loop.timeout_ms((), self.timeout_ms).unwrap());
+            loop {
+                match self.buffer.pop_front() {
+                    Some(mut request) => match self.sock.try_write_buf(&mut request.data) {
+                        Ok(Some(written)) if written > 0 => {
+                            debug!("Written {:?} bytes", written);
+                            if request.data.has_remaining() {
+                                self.buffer.push_front(request);
+                                break
+                            } else {
+                                self.inflight.push_back(request);
+
+                                // Sent a full message, clear the ping timeout
+                                self.clear_ping_timeout(event_loop);
+                            }
+                        },
+                        Ok(None) => trace!("Spurious write"),
+                        Ok(Some(_)) => warn!("Connection closed: write"),
+                        Err(e) => error!("Failed to write socket: {:?}", e)
+                    },
+                    None => break
                 }
             }
+            if !self.buffer.is_empty() {
+                // Output buffer still has content, so we need to write again!
+                next_events.insert(EventSet::writable());
+            }
+            self.timeout = Some(event_loop.timeout_ms((), self.timeout_ms).unwrap());
         }
         if events.is_readable() {
-            if self.response_len == 0 {
-                self.response_len = self.read_response_len();
-            }
-            // TODO Try to request to read response_len bytes
-            // TODO don't handle empty responses, e.g.: len = 0
-            match self.sock.try_read(&mut self.response[0..self.response_len]) {
-                Ok(Some(amount)) => {
-                    debug!("Read {:?} bytes", amount);//, &self.response[0..self.response_len]);
-                    // The response is fully read
-                    if amount == self.response_len {
-                        self.handle_response(event_loop);
-                        self.response_len = 0;
-                        //self.response.clear();
-                    }
+            match self.sock.try_read_buf(&mut self.response) {
+                Ok(Some(read)) if read > 0 => {
+                    debug!("Read {:?} bytes", read);
+                    self.handle_response(event_loop);
                 },
-                Ok(None) => debug!("Read Ok(None) would block"),
-                Err(e) => error!("Failed to read response {:?}", e)
+                Ok(None) => trace!("Spurious read"),
+                Ok(Some(_)) => warn!("Connection closed: read"),
+                Err(e) => error!("Failed to read socket: {:?}", e)
             }
         }
         if events.is_hup() {

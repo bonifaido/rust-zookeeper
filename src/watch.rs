@@ -50,10 +50,12 @@ impl<W: Watcher> Handler for ZkWatchHandler<W> {
         info!("Event thread got response {:?}", response.header);
         let mut response = response;
         match response.header.err {
-            0 => {
-                let event = WatchedEvent::read_from(&mut response.data);
-                info!("{:?}", event);
-                self.watcher.handle(&event);
+            0 => match WatchedEvent::read_from(&mut response.data) {
+                Ok(event) => {
+                    info!("{:?}", event);
+                    self.watcher.handle(&event);
+                },
+                Err(e) => error!("Failed to parse WatchedEvent {:?}", e)
             },
             e => error!("WatchedEvent.error {:?}", e)
         }

@@ -22,6 +22,14 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
 
+    fn zk_thread<F>(name: &str, task: F) -> ZkResult<thread::JoinHandle<()>>
+    where F: FnOnce() + Send + 'static {
+        thread::Builder::new()
+            .name(name.to_string())
+            .spawn(task)
+            .map_err(|_|ZkError::SystemError)
+    }
+
     pub fn connect<W>(connect_string: &str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper>
     where W: Watcher + 'static {
 
@@ -32,160 +40,13 @@ impl ZooKeeper {
         let watch = ZkWatch::new(watcher);
         let io = ZkIo::new(addrs.clone(), timeout, watch.sender());
         let sender = io.sender();
-        thread::Builder::new().name("event".to_string()).spawn(move || {
-            watch.run().unwrap();
-        });
-        thread::Builder::new().name("io".to_string()).spawn(move || {
-            io.run().unwrap();
-        });
 
-        let zk = ZooKeeper{chroot: chroot,
-                            xid: AtomicIsize::new(1),
-                            io: sender};
+        try!(Self::zk_thread("event", move || { watch.run().unwrap() }));
+        try!(Self::zk_thread("io", move || { io.run().unwrap() }));
 
-        Ok(zk)
-
-        // // Writer thread
-        // thread::spawn(move || {
-        //     let mut conn_resp = ConnectResponse::initial(timeout);
-
-        //     loop {
-        //         debug!("Writer: connecting, trying to get new writer_sock");
-        //         let (mut writer_sock, new_conn_resp) = match running.load(Ordering::Relaxed) {
-        //             true => Self::reconnect(&addrs, conn_resp),
-        //             false => {
-        //                 debug!("Writer: closed, exiting");
-        //                 return
-        //             }
-        //         };
-                
-        //         conn_resp = new_conn_resp;
-
-        //         if conn_resp.timeout <= 0 {
-        //             Self::send_watched_event(&event_tx_manual, KeeperState::Expired);
-        //             return
-        //         }
-
-        //         debug!("Writer: negotiated session timeout: {}ms", conn_resp.timeout );
-
-        //         let reader_sock = match writer_sock.try_clone() {
-        //             Ok(sock) => sock,
-        //             Err(e) => {
-        //                 debug!("Writer: failed to clone socker for Reader: {}", e);
-        //                 break
-        //             }
-        //         };
-
-        //         // pass a clone of the socket to the reader thread for reading
-        //         match reader_sock_tx.send(reader_sock) {
-        //             Ok(()) => (),
-        //             Err(e) => panic!("Writer: failed to pass socket to Reader: {}", e)
-        //         }
-
-        //         // Send Connected event through event thread to Watchers
-        //         let keeper_state = if conn_resp.read_only {
-        //             KeeperState::ConnectedReadOnly
-        //         } else {
-        //             KeeperState::SyncConnected
-        //         };
-
-        //         Self::send_watched_event(&event_tx_manual, keeper_state);
-
-        //         let ping_timeout = periodic_ms(conn_resp.timeout as u32 * 2 / 3);
-
-        //         loop {
-        //             // do we have something to send or do we need to ping?
-        //             select! {
-        //                 res = packet_rx.recv() => {
-        //                     let packet = match res {
-        //                         Ok(packet) => packet,
-        //                         Err(e) => {
-        //                             debug!("Writer: {}, exiting", e);
-        //                             return
-        //                         }
-        //                     };
-        //                     match writer_sock.write_all(&packet.data) {
-        //                         Ok(()) => (),
-        //                         Err(e) => {
-        //                             debug!("Writer: failed to send to server, reconnecting {}", e);
-        //                             Self::send_watched_event(&event_tx_manual, KeeperState::Disconnected);
-        //                             break
-        //                         }
-        //                     }
-        //                     let opcode = packet.opcode;
-        //                     match written_tx.send(packet) {
-        //                         Ok(()) => (),
-        //                         Err(e) => panic!("Writer: failed to communicate with Reader: {}", e)
-        //                     }
-        //                     match opcode {
-        //                         OpCode::CloseSession => {
-        //                             debug!("Writer: exiting");
-        //                             return
-        //                         },
-        //                         _ => ()
-        //                     }
-        //                 },
-        //                 _ = ping_timeout.recv() => {
-        //                     debug!("Writer: pinging {:?}", writer_sock.peer_addr());
-        //                     match writer_sock.write_all(&PING) {
-        //                         Ok(()) => (),
-        //                         Err(e) => {
-        //                             debug!("Writer: failed to ping server {}, reconnecting", e);
-        //                             Self::send_watched_event(&event_tx_manual, KeeperState::Disconnected);
-        //                             break
-        //                         }
-        //                     }
-        //                 }
-        //             };
-        //         }
-        //     }
-        // });
-
-        // // Reader thread
-        // thread::spawn(move || {
-        //     loop {
-        //         debug!("Reader: connecting, trying to get new reader_sock");
-        //         let mut reader_sock = match reader_sock_rx.recv() {
-        //             Ok(sock) => sock,
-        //             Err(e) => {
-        //                 debug!("Reader: Writer died {}, exiting", e);
-        //                 return
-        //             }
-        //         };
-
-        //         loop {
-        //             let (reply_header, mut buf) = match reader_sock.read_reply() {
-        //                 Ok(reply) => reply,
-        //                 Err(e) => {
-        //                     debug!("Reader: read_reply {}", e);
-        //                     Self::send_watched_event(&event_tx, KeeperState::Disconnected);
-        //                     break
-        //                 }
-        //             };
-        //             match reply_header.xid {
-        //                 -1 => match event_tx.send(WatchedEvent::read_from(&mut buf)) {
-        //                     Ok(()) => (),
-        //                     Err(e) => panic!("Reader: Event died {}", e)
-        //                 },
-        //                 -2 => debug!("Reader: received ping response"),
-        //                 _xid => {
-        //                     let packet = match written_rx.recv() {
-        //                         Ok(packet) => packet,
-        //                         Err(e) => {
-        //                             debug!("Reader: Writer died {}", e);
-        //                             break
-        //                         }
-        //                     };
-        //                     let result = Self::parse_reply(reply_header.err, &packet, &mut buf);
-        //                     match packet.resp_tx.send(result) {
-        //                         Ok(()) => (),
-        //                         Err(e) => debug!("Reader: failed to pass result to client {}", e)
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // });
+        Ok(ZooKeeper{chroot: chroot,
+                     xid: AtomicIsize::new(1),
+                     io: sender})
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
@@ -220,7 +81,7 @@ impl ZooKeeper {
 
     fn request<T: WriteTo, R: ReadFrom>(&self, opcode: OpCode, xid: i32, req: T) -> ZkResult<R> {
         let rh = RequestHeader{xid: xid, opcode: opcode};
-        let buf = to_len_prefixed_buf(rh, req);
+        let buf = try!(to_len_prefixed_buf(rh, req).map_err(|_|ZkError::MarshallingError));
         
         let (resp_tx, resp_rx) = sync_channel(0);
         let request = RawRequest{opcode: opcode, data: buf, listener: Some(resp_tx)};
@@ -228,9 +89,9 @@ impl ZooKeeper {
         try!(self.io.send(request).map_err(|_|ZkError::ConnectionLoss));
 
         let mut response = try!(resp_rx.recv().map_err(|_|ZkError::ConnectionLoss));
-        
+        //debug!("parsing {:?}", response.data);
         match response.header.err {
-            0 => Ok(ReadFrom::read_from(&mut response.data)),
+            0 => Ok(try!(ReadFrom::read_from(&mut response.data).map_err(|_|ZkError::MarshallingError))),
             e => Err(FromPrimitive::from_i32(e).unwrap())
         }
     }

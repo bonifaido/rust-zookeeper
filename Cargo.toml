@@ -1,5 +1,4 @@
 [package]
-
 name = "zookeeper"
 version = "0.1.3"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
@@ -7,14 +6,15 @@ license = "MIT"
 homepage = "https://github.com/bonifaido/rust-zookeeper"
 repository = "https://github.com/bonifaido/rust-zookeeper"
 documentation = "http://bonifaido.github.io/rust-zookeeper"
-description = "A minimal ZooKeeper client, work in progress"
+description = "A minimal ZooKeeper client"
 readme = "README.md"
 keywords = ["zookeeper", "distributed", "coordination"]
 
 [dependencies]
 byteorder = "0.3"
-bytes = "0.2"
-enum_primitive = "0.1.0"
+# TODO mio specifies this version exactly!
+bytes = { git = "https://github.com/carllerche/bytes", rev = "7edb577d0a" }
+enum_primitive = "0.1"
 lazy_static = "0.1"
 log = "0.3"
 mio = {git = "https://github.com/carllerche/mio.git"}
@@ -22,7 +22,3 @@ num = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"
-log4rs = "0.3"
-
-[features]
-unstable = []
