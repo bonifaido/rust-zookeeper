@@ -22,3 +22,6 @@ num = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"
+
+[features]     
+unstable = []
