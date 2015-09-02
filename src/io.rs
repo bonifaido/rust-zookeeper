@@ -80,8 +80,13 @@ impl ZkHandler {
     }
 
     fn register(&mut self, event_loop: &mut EventLoop<Self>, events: EventSet) {
-        event_loop.reregister(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
+        event_loop.register_opt(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
         .ok().expect("Failed to register ZK handle");
+    }
+
+    fn reregister(&mut self, event_loop: &mut EventLoop<Self>, events: EventSet) {
+        event_loop.reregister(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
+        .ok().expect("Failed to reregister ZK handle");
     }
 
     fn handle_response(&mut self, event_loop: &mut EventLoop<Self>) {
@@ -201,9 +206,6 @@ impl Handler for ZkHandler {
     type Timeout = ();
 
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        // Not sure that we need to write, but we always need to read, because of watches
-        let mut next_events = EventSet::all();
-        next_events.remove(EventSet::writable());
 
         debug!("ready {:?} {:?}", token, events);
         if events.is_writable() {
@@ -229,10 +231,6 @@ impl Handler for ZkHandler {
                     None => break
                 }
             }
-            if !self.buffer.is_empty() {
-                // Output buffer still has content, so we need to write again!
-                next_events.insert(EventSet::writable());
-            }
             self.timeout = Some(event_loop.timeout_ms((), self.timeout_ms).unwrap());
         }
         if events.is_readable() {
@@ -253,15 +251,24 @@ impl Handler for ZkHandler {
             }
         }
 
+        // Not sure that we need to write, but we always need to read, because of watches
+        // If the output buffer has no content, we don't need to write again
+        let mut event_set = EventSet::all();
+        if self.buffer.is_empty() {
+            event_set.remove(EventSet::writable());
+        }
+
         // This tick is done, subscribe to a forthcoming one
-        self.register(event_loop, next_events);
+        self.register(event_loop, event_set);
     }
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, request: Self::Message) {
         debug!("notify {:?}", request.opcode);
         if self.state != ZkState::Closed {
+            if self.buffer.is_empty() {
+                self.reregister(event_loop, EventSet::all());
+            }
             self.buffer.push_back(request);
-            self.register(event_loop, EventSet::all());
         } else {
             let header = ReplyHeader{xid: 0, zxid: 0, err: ZkError::ConnectionLoss as i32};
             let response = RawResponse{header: header, data: ByteBuf::new(vec![])};
