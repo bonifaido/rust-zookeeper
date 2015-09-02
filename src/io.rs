@@ -174,7 +174,12 @@ impl ZkHandler {
 
         self.clear_ping_timeout(event_loop);
 
-        self.sock = TcpStream::connect(&self.hosts.next()).unwrap();
+        // TODO reconnect loop
+        let host = self.hosts.next().clone();
+        self.sock = match TcpStream::connect(&host) {
+            Ok(sock) => sock,
+            Err(e) => panic!("Failed to open connection {:?}: {:?}", host, e)
+        };
         
         let request = self.connect_request();
 
