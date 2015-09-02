@@ -259,7 +259,7 @@ impl Handler for ZkHandler {
         }
 
         // This tick is done, subscribe to a forthcoming one
-        self.register(event_loop, event_set);
+        self.reregister(event_loop, event_set);
     }
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, request: Self::Message) {
