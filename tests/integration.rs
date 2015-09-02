@@ -2,64 +2,92 @@
 extern crate zookeeper;
 extern crate env_logger;
 
-use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
+use zookeeper::{CreateMode, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
+use zookeeper::KeeperState;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread;
 
-struct LoggingWatcher;
-impl Watcher for LoggingWatcher {
-    fn handle(&mut self, e: &WatchedEvent) {
-        println!("{:?}", e)
+struct ZkCluster {
+    process: Child,
+    connect_string: String,
+    closed: bool
+}
+
+impl ZkCluster {
+
+    fn start(instances: usize) -> ZkCluster {
+        let mut process = match Command::new("java")
+                .arg("-jar")
+                .arg("zk-test-cluster/target/main.jar")
+                .arg(instances.to_string())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn() {
+            Ok(p) => p,
+            Err(e) => panic!("failed to start ZkCluster: {}", e),
+        };
+        let connect_string = Self::read_connect_string(&mut process);
+        ZkCluster{process: process, connect_string: connect_string, closed: false}
+    }
+
+    fn read_connect_string(process: &mut Child) -> String {
+        let mut reader = BufReader::new(process.stdout.as_mut().unwrap());
+        let mut connect_string = String::new();
+        if reader.read_line(&mut connect_string).is_err() {
+            panic!("Couldn't read ZK connect_string")
+        }
+        connect_string.pop(); // remove '\n'
+        connect_string
+    }
+
+    fn kill_an_instance(&mut self) {
+        self.process.stdin.as_mut().unwrap().write(b"k").unwrap();
+    }
+
+    fn shutdown(&mut self) {
+        if !self.closed {
+            self.process.stdin.as_mut().unwrap().write(b"q").unwrap();
+            assert!(self.process.wait().unwrap().success());
+            self.closed = true
+        }
     }
 }
 
-fn start_zk() -> Child {
-    match Command::new("java")
-            .arg("-jar")
-            .arg("zk-test-cluster/target/main.jar")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn() {
-        Ok(p) => p,
-        Err(e) => panic!("failed to execute process: {}", e),
+impl Drop for ZkCluster {
+    fn drop(&mut self) {
+        self.shutdown()
     }
-}
-
-fn get_connect_string(server: &mut Child) -> String {
-    let mut reader = BufReader::new(server.stdout.as_mut().unwrap());
-
-    let mut connect_string = String::new();
-    if reader.read_line(&mut connect_string).is_err() {
-        panic!("Couldn't read ZK connect_string")
-    }
-    connect_string.pop(); // remove '\n'
-    connect_string
-}
-
-fn shutdown(server: &mut Child) {
-    server.stdin.as_mut().unwrap().write(b"q").unwrap();
-    assert!(server.wait().unwrap().success());
 }
 
 #[test]
 fn simple_integration_test() {
     env_logger::init().unwrap();
 
-    // Create a test cluster and obtain its connection string
-    let mut server = start_zk();
-    let connect_string = get_connect_string(&mut server);
+    // Create a test cluster
+    let mut cluster = ZkCluster::start(3);
+
+    let disconnects = Arc::new(AtomicUsize::new(0));
+    let disconnects_watcher = disconnects.clone();
 
     // Connect to the test cluster
-    let client = ZooKeeper::connect(connect_string.as_ref(), Duration::from_secs(5), LoggingWatcher).unwrap();
+    let client = ZooKeeper::connect(&cluster.connect_string,
+                                    Duration::from_secs(5),
+                                    move |event: &WatchedEvent| {
+                                        if event.keeper_state == KeeperState::Disconnected {
+                                            disconnects_watcher.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                    }).unwrap();
 
 
     // Do the tests
     let create = client.create("/test", vec![8,8], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
-    assert_eq!(create.ok(), Some("/test".to_string()));
+    assert_eq!(create.ok(), Some("/test".to_owned()));
 
 
     let exists = client.exists("/test", true);
@@ -83,7 +111,18 @@ fn simple_integration_test() {
 
     let mut sorted_children = children.unwrap();
     sorted_children.sort();
-    assert_eq!(sorted_children, vec!["test".to_string(), "zookeeper".to_string()]);
+    assert_eq!(sorted_children, vec!["test".to_owned(), "zookeeper".to_owned()]);
+
+
+    // Let's see what happens when the connected server goes down
+    assert_eq!(disconnects.load(Ordering::Relaxed), 0);
+
+    cluster.kill_an_instance();
+
+    thread::sleep_ms(1000);
+
+    // TODO once `manual` events are possible
+    // assert_eq!(disconnects.load(Ordering::Relaxed), 1);
 
 
     // After closing the client all operations return Err
@@ -93,6 +132,6 @@ fn simple_integration_test() {
     assert!(exists.is_err());
 
 
-    // Close the server
-    shutdown(&mut server);
+    // Close the whole cluster
+    cluster.shutdown();
 }

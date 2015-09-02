@@ -7,6 +7,12 @@ pub trait Watcher: Send {
     fn handle(&mut self, &WatchedEvent);
 }
 
+impl<F> Watcher for F where F: FnMut(&WatchedEvent) + Send {
+    fn handle(&mut self, event: &WatchedEvent) {
+        self(event)
+    }
+}
+
 pub struct ZkWatch<W: Watcher> {
     handler: ZkWatchHandler<W>,
     event_loop: EventLoop<ZkWatchHandler<W>>

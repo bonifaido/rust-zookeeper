@@ -32,7 +32,7 @@ pub enum CreateMode {
 
 enum_from_primitive! {
     /// Enumeration of states the client may be at a Watcher Event
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub enum KeeperState {
         Disconnected = 0,
         SyncConnected = 3,

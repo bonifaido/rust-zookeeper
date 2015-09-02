@@ -41,7 +41,7 @@ impl Hosts {
         Hosts{addrs: addrs, index: 0}
     }
 
-    fn next(&mut self) -> &SocketAddr {
+    fn next<'a>(&'a mut self) -> &'a SocketAddr {
         let addr = &self.addrs[self.index];
         if self.addrs.len() == self.index+1 {
             self.index = 0;
@@ -171,23 +171,29 @@ impl ZkHandler {
     }
 
     fn reconnect(&mut self, event_loop: &mut EventLoop<Self>) {
-        info!("Connecting to new server");
-
         self.buffer.clear(); // drop all requests
 
         self.response.mark(); self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
 
-        //self.state = ZkState::Connecting;
+        // self.state = ZkState::Connecting;
 
         self.clear_ping_timeout(event_loop);
 
-        // TODO reconnect loop
-        let host = self.hosts.next().clone();
-        self.sock = match TcpStream::connect(&host) {
-            Ok(sock) => sock,
-            Err(e) => panic!("Failed to open connection {:?}: {:?}", host, e)
-        };
-        
+        // reconnect loop
+        loop {
+            let host = self.hosts.next();
+            info!("Connecting to new server {:?}", host);
+            self.sock = match TcpStream::connect(host) {
+                Ok(sock) => sock,
+                Err(e) => {
+                    warn!("Failed to connect {:?}: {:?}", host, e);
+                    continue
+                }
+            };
+            info!("Connected to {:?}", host);
+            break
+        }
+
         let request = self.connect_request();
 
         self.buffer.push_back(request);
