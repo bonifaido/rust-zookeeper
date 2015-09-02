@@ -80,7 +80,7 @@ impl ZkHandler {
     }
 
     fn register(&mut self, event_loop: &mut EventLoop<Self>, events: EventSet) {
-        event_loop.register_opt(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
+        event_loop.reregister(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
         .ok().expect("Failed to register ZK handle");
     }
 
