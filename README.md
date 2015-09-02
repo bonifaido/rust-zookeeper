@@ -1,6 +1,7 @@
 [rust-zookeeper][doc]
 =====================
 [![Build Status](https://travis-ci.org/bonifaido/rust-zookeeper.svg?branch=master)](https://travis-ci.org/bonifaido/rust-zookeeper)
+[![Coverage Status](https://coveralls.io/repos/bonifaido/rust-zookeeper/badge.svg?branch=master&service=github)](https://coveralls.io/github/bonifaido/rust-zookeeper?branch=master)
 [![Version](https://img.shields.io/crates/v/zookeeper.svg)](https://crates.io/crates/zookeeper)
 [![License](https://img.shields.io/crates/l/zookeeper.svg)](http://opensource.org/licenses/MIT)
 
