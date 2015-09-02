@@ -8,6 +8,7 @@ use zookeeper::acls;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
+use std::thread;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -63,6 +64,10 @@ fn simple_integration_test() {
 
     let exists = client.exists("/test", true);
     assert!(exists.is_ok());
+
+
+    // Check that during inactivity, pinging keeps alive the connection
+    thread::sleep_ms(8000);
 
 
     // Set/Get Big-Data(tm)

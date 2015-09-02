@@ -124,6 +124,7 @@ impl ZkHandler {
                             },
                             -2 => {
                                 debug!("handle_response Got a ping response!");
+                                self.inflight.pop_front();
                             },
                             _ => match self.inflight.pop_front() {
                                 Some(ref request) => {
@@ -143,7 +144,7 @@ impl ZkHandler {
                             Err(e) => panic!("Failed to parse ConnectResponse {:?}", e) // TODO skip this chunk
                         };
                         info!("Connected: {:?}", conn_resp);
-                        self.timeout_ms = conn_resp.timeout;
+                        self.timeout_ms = conn_resp.timeout / 3 * 2;
                         self.state = ZkState::Connected;
                     }
                 }
