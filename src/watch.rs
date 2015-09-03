@@ -1,7 +1,22 @@
-use io::RawResponse;
+use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
 use proto::{ReadFrom, WatchedEvent};
+use zookeeper::RawResponse;
 use mio::{EventLoop, Handler, Sender};
+use std::collections::HashMap;
 use std::io;
+
+#[derive(PartialEq)]
+pub enum WatchType {
+    Child,
+    Data,
+    Exist
+}
+
+pub struct Watch {
+    pub path: String,
+    pub watch_type: WatchType,
+    pub watcher: Box<Watcher>
+}
 
 pub trait Watcher: Send {
     fn handle(&mut self, &WatchedEvent);
@@ -13,6 +28,11 @@ impl<F> Watcher for F where F: FnMut(&WatchedEvent) + Send {
     }
 }
 
+pub enum WatchMessage {
+    Event(RawResponse),
+    Watch(Watch)
+}
+
 pub struct ZkWatch<W: Watcher> {
     handler: ZkWatchHandler<W>,
     event_loop: EventLoop<ZkWatchHandler<W>>
@@ -21,49 +41,89 @@ pub struct ZkWatch<W: Watcher> {
 impl<W: Watcher> ZkWatch<W> {
     pub fn new(watcher: W) -> Self {
         let event_loop = EventLoop::new().unwrap();
-        let handler = ZkWatchHandler{watcher: watcher};
+        let handler = ZkWatchHandler{watcher: watcher, watches: HashMap::new()};
         ZkWatch{event_loop: event_loop, handler: handler}
     }
 
-    pub fn sender(&self) -> Sender<RawResponse> {
+    pub fn sender(&self) -> Sender<WatchMessage> {
         self.event_loop.channel()
     }
 
     pub fn run(mut self) -> io::Result<()> {
         self.event_loop.run(&mut self.handler)
     }
-
-    // This should be in IO
-    // fn send_watched_event(keeper_state: KeeperState) {
-    //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
-    //                                    keeper_state: keeper_state,
-    //                                    path: None}) {
-    //         Ok(()) => (),
-    //         Err(e) => panic!("Reader/Writer: Event died {}", e)
-    //     }
-    // }
 }
 
 struct ZkWatchHandler<W: Watcher> {
-    watcher: W
+    watcher: W,
+    watches: HashMap<String, Vec<Watch>>
 }
 
 impl<W: Watcher> Handler for ZkWatchHandler<W> {
-    type Message = RawResponse;
+    type Message = WatchMessage;
     type Timeout = ();
 
-    fn notify(&mut self, _: &mut EventLoop<Self>, response: Self::Message) {
-        info!("Event thread got response {:?}", response.header);
-        let mut response = response;
-        match response.header.err {
-            0 => match WatchedEvent::read_from(&mut response.data) {
-                Ok(event) => {
-                    info!("{:?}", event);
-                    self.watcher.handle(&event);
-                },
-                Err(e) => error!("Failed to parse WatchedEvent {:?}", e)
+    fn notify(&mut self, _: &mut EventLoop<Self>, message: Self::Message) {
+        match message {
+            WatchMessage::Event(response) => {
+                info!("Event thread got response {:?}", response.header);
+                let mut data = response.data;
+                match response.header.err {
+                    0 => match WatchedEvent::read_from(&mut data) {
+                        Ok(event) => self.dispatch(&event),
+                        Err(e) => error!("Failed to parse WatchedEvent {:?}", e)
+                    },
+                    e => error!("WatchedEvent.error {:?}", e)
+                }
             },
-            e => error!("WatchedEvent.error {:?}", e)
+            WatchMessage::Watch(watch) => {
+                self.watches.insert(watch.path.to_owned(), vec![watch]);
+            }
+        }
+    }
+}
+
+impl<W: Watcher> ZkWatchHandler<W> {
+    fn dispatch(&mut self, event: &WatchedEvent) {
+        debug!("{:?}", event);
+        if let Some(watches) = self.find_watches(&event) {
+            for mut watch in watches.into_iter() {
+                watch.watcher.handle(&event)
+            }
+        } else {
+            self.watcher.handle(&event)
+        }
+    }
+
+    fn find_watches(&mut self, event: &WatchedEvent) -> Option<Vec<Watch>> {
+        if let Some(ref path) = event.path {
+            match self.watches.remove(path) {
+                Some(watches) => {
+
+                    let (matching, left): (_, Vec<Watch>) = watches.into_iter().partition(
+                        |w|
+                        match event.event_type {
+                            NodeChildrenChanged => w.watch_type == WatchType::Child,
+                            NodeCreated | NodeDataChanged => w.watch_type == WatchType::Data
+                                                          || w.watch_type == WatchType::Exist,
+                            NodeDeleted => true,
+                            _ => false
+                        });
+
+                    // put back the remaining watches
+                    if !left.is_empty() {
+                        self.watches.insert(path.to_owned(), left);
+                    }
+                    if matching.is_empty() {
+                        None
+                    } else {
+                        Some(matching)
+                    }
+                },
+                None => None
+            }
+        } else {
+            None
         }
     }
 }

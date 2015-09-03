@@ -1,5 +1,7 @@
 use consts::{OpCode, ZkError, ZkState};
 use proto::{ByteBuf, ConnectRequest, ConnectResponse, ReadFrom, ReplyHeader, RequestHeader, WriteTo};
+use watch::WatchMessage;
+use zookeeper::{RawResponse, RawRequest};
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, RingBuf};
@@ -10,7 +12,6 @@ use std::io;
 use std::io::Cursor;
 use std::mem;
 use std::net::SocketAddr;
-use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
 const ZK: Token = Token(1);
@@ -18,17 +19,6 @@ const ZK: Token = Token(1);
 lazy_static! {
     static ref PING: ByteBuf =
     RequestHeader{xid: -2, opcode: OpCode::Ping}.to_len_prefixed_buf().unwrap();
-}
-
-pub struct RawRequest {
-    pub opcode: OpCode,
-    pub data: ByteBuf,
-    pub listener: Option<SyncSender<RawResponse>>
-}
-
-pub struct RawResponse {
-    pub header: ReplyHeader,
-    pub data: ByteBuf
 }
 
 struct Hosts {
@@ -61,13 +51,13 @@ struct ZkHandler {
     response: RingBuf,
     timeout: Option<Timeout>,
     timeout_ms: u64,
-    event_sender: Sender<RawResponse>,
+    watch_sender: Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64
 }
 
 impl ZkHandler {
-    fn new(addrs: Vec<SocketAddr>, timeout_ms: u64, event_sender: Sender<RawResponse>) -> ZkHandler {
+    fn new(addrs: Vec<SocketAddr>, timeout_ms: u64, watch_sender: Sender<WatchMessage>) -> ZkHandler {
         ZkHandler{
             sock: unsafe{mem::dropped()},
             state: ZkState::NotConnected,
@@ -77,7 +67,7 @@ impl ZkHandler {
             response: RingBuf::new(1024 * 1024), // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
             timeout: None,
             timeout_ms: timeout_ms,
-            event_sender: event_sender,
+            watch_sender: watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
             zxid: 0
         }
@@ -125,19 +115,19 @@ impl ZkHandler {
                         match response.header.xid {
                             -1 => {
                                 debug!("handle_response Got a watch event!");
-                                self.event_sender.send(response).unwrap();
+                                self.watch_sender.send(WatchMessage::Event(response)).unwrap();
                             },
                             -2 => {
                                 debug!("handle_response Got a ping response!");
                                 self.inflight.pop_front();
                             },
                             _ => match self.inflight.pop_front() {
-                                Some(ref request) => {
-                                    Self::send_response(request, response);
+                                Some(request) => {
                                     if request.opcode == OpCode::CloseSession {
                                         self.state = ZkState::Closed;
                                         event_loop.shutdown();
                                     }
+                                    self.send_response(request, response);
                                 },
                                 None => panic!("Shouldn't happen, no inflight request")
                             }
@@ -159,13 +149,16 @@ impl ZkHandler {
         }
     }
 
-    fn send_response(request: &RawRequest, response: RawResponse) {
+    fn send_response(&self, request: RawRequest, response: RawResponse) {
         match request.listener {
             Some(ref listener) => {
                 debug!("handle_response Opcode is {:?}", request.opcode);
                 listener.send(response).unwrap();
             },
             None => debug!("Nobody is interested in respone {:?}", request.opcode)
+        }
+        if let Some(watch) = request.watch {
+            self.watch_sender.send(WatchMessage::Watch(watch)).unwrap();
         }
     }
 
@@ -177,6 +170,7 @@ impl ZkHandler {
 
     fn reconnect(&mut self, event_loop: &mut EventLoop<Self>) {
         // self.state = ZkState::Connecting;
+        // TODO only until session times out
         loop {
             self.buffer.clear(); // drop all requests
             self.response.mark(); self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
@@ -208,7 +202,7 @@ impl ZkHandler {
     fn connect_request(&self) -> RawRequest {
         let conn_req = ConnectRequest::from(&self.conn_resp, self.zxid);
         let buf = conn_req.to_len_prefixed_buf().unwrap();
-        RawRequest{opcode: OpCode::Auth, data: buf, listener: None}
+        RawRequest{opcode: OpCode::Auth, data: buf, listener: None, watch: None}
     }
 }
 
@@ -257,6 +251,15 @@ impl Handler for ZkHandler {
         }
         if events.is_hup() {
             if self.state != ZkState::Closed {
+                // If we were connected
+                // fn send_watched_event(keeper_state: KeeperState) {
+                //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
+                //                                    keeper_state: keeper_state,
+                //                                    path: None}) {
+                //         Ok(()) => (),
+                //         Err(e) => panic!("Reader/Writer: Event died {}", e)
+                //     }
+                // }
                 self.state = ZkState::NotConnected;
                 self.reconnect(event_loop);
             }
@@ -283,7 +286,7 @@ impl Handler for ZkHandler {
         } else {
             let header = ReplyHeader{xid: 0, zxid: 0, err: ZkError::ConnectionLoss as i32};
             let response = RawResponse{header: header, data: ByteBuf::new(vec![])};
-            Self::send_response(&request, response);
+            self.send_response(request, response);
         }
     }
 
@@ -292,7 +295,8 @@ impl Handler for ZkHandler {
         let ping = RawRequest{
             opcode: OpCode::Ping,
             data: PING.clone(),
-            listener: None
+            listener: None,
+            watch: None
         };
         event_loop.channel().send(ping).unwrap();
     }
@@ -304,7 +308,7 @@ pub struct ZkIo {
 }
 
 impl ZkIo {
-    pub fn new(addrs: Vec<SocketAddr>, timeout: Duration, event_sender: Sender<RawResponse>) -> ZkIo {
+    pub fn new(addrs: Vec<SocketAddr>, timeout: Duration, event_sender: Sender<WatchMessage>) -> ZkIo {
         let event_loop = EventLoop::new().unwrap();
         let timeout_ms = timeout.as_secs() * 1000 + timeout.subsec_nanos() as u64 / 1000000;
         let handler = ZkHandler::new(addrs, timeout_ms, event_sender);

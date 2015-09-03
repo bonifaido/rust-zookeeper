@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use zookeeper::ZooKeeper;
 
 pub struct PathChildrenCache {
-    zk: Arc<ZooKeeper>
+    zk: Arc<ZooKeeper>,
+    data: HashMap<String, Vec<u8>>
 }
 
 impl PathChildrenCache {
@@ -10,6 +12,10 @@ impl PathChildrenCache {
 
         //zk.get_children(path, );
 
-        PathChildrenCache{zk: zk}
+        PathChildrenCache{zk: zk, data: HashMap::new()}
+    }
+
+    fn get_current_data(&self) -> &HashMap<String, Vec<u8>> {
+        &self.data
     }
 }

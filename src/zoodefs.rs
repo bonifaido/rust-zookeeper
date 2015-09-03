@@ -12,7 +12,7 @@ pub mod acls {
     use proto::Acl;
 
     fn acl(perm: i32, scheme: &str, id: &str) -> Vec<Acl> {
-        vec![Acl{perms: perm, scheme: scheme.to_string(), id: id.to_string()}]
+        vec![Acl{perms: perm, scheme: scheme.to_owned(), id: id.to_owned()}]
     }
 
     lazy_static!{

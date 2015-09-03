@@ -110,6 +110,12 @@ fn simple_integration_test() {
     let children = client.get_children("/", true);
     assert!(children.is_ok());
 
+    let children = client.get_children_w("/", |event: &WatchedEvent| println!("Custom {:?}", event));
+    assert!(children.is_ok());
+    let delete = client.delete("/test", -1);
+    assert!(delete.is_ok());
+
+
     let mut sorted_children = children.unwrap();
     sorted_children.sort();
     assert_eq!(sorted_children, vec!["test".to_owned(), "zookeeper".to_owned()]);

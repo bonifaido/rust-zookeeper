@@ -1,18 +1,30 @@
 use consts::*;
 use proto::*;
-use io::{RawRequest, ZkIo};
+use io::ZkIo;
 use mio;
 use num::FromPrimitive;
-use watch::{Watcher, ZkWatch};
+use watch::{Watcher, Watch, WatchType, ZkWatch};
 use std::io::{Read, Result};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};
-use std::sync::mpsc::{Sender, sync_channel};
+use std::sync::mpsc::{Sender, sync_channel, SyncSender};
 use std::time::Duration;
 use std::thread;
 
 pub type ZkResult<T> = result::Result<T, ZkError>;
+
+pub struct RawRequest {
+    pub opcode: OpCode,
+    pub data: ByteBuf,
+    pub listener: Option<SyncSender<RawResponse>>,
+    pub watch: Option<Watch>
+}
+
+pub struct RawResponse {
+    pub header: ReplyHeader,
+    pub data: ByteBuf
+}
 
 pub struct ZooKeeper {
     chroot: Option<String>,
@@ -25,7 +37,7 @@ impl ZooKeeper {
     fn zk_thread<F>(name: &str, task: F) -> ZkResult<thread::JoinHandle<()>>
     where F: FnOnce() + Send + 'static {
         thread::Builder::new()
-            .name(name.to_string())
+            .name(name.to_owned())
             .spawn(task)
             .map_err(|_|ZkError::SystemError)
     }
@@ -54,7 +66,7 @@ impl ZooKeeper {
             Some(start) => {
                 match &connect_string[start..connect_string.len()] {
                     "" | "/" => (None, start),
-                    chroot => (Some(try!(Self::validate_path(chroot)).to_string()), start)
+                    chroot => (Some(try!(Self::validate_path(chroot)).to_owned()), start)
                 }
             },
             None => (None, connect_string.len())
@@ -79,17 +91,17 @@ impl ZooKeeper {
         self.xid.fetch_add(1, Ordering::Relaxed) as i32
     }
 
-    fn request<T: WriteTo, R: ReadFrom>(&self, opcode: OpCode, xid: i32, req: T) -> ZkResult<R> {
+    fn request<T: WriteTo, R: ReadFrom>(&self, opcode: OpCode, xid: i32, req: T, watch: Option<Watch>) -> ZkResult<R> {
         let rh = RequestHeader{xid: xid, opcode: opcode};
         let buf = try!(to_len_prefixed_buf(rh, req).map_err(|_|ZkError::MarshallingError));
         
         let (resp_tx, resp_rx) = sync_channel(0);
-        let request = RawRequest{opcode: opcode, data: buf, listener: Some(resp_tx)};
+        let request = RawRequest{opcode: opcode, data: buf, listener: Some(resp_tx), watch: watch};
 
         try!(self.io.send(request).map_err(|_|ZkError::ConnectionLoss));
 
         let mut response = try!(resp_rx.recv().map_err(|_|ZkError::ConnectionLoss));
-        //debug!("parsing {:?}", response.data);
+
         match response.header.err {
             0 => Ok(try!(ReadFrom::read_from(&mut response.data).map_err(|_|ZkError::MarshallingError))),
             e => Err(FromPrimitive::from_i32(e).unwrap())
@@ -113,14 +125,14 @@ impl ZooKeeper {
                 "/" => Ok(chroot.clone()),
                 path => Ok(chroot.clone() + try!(Self::validate_path(path)))
             },
-            None => Ok(try!(Self::validate_path(path)).to_string())
+            None => Ok(try!(Self::validate_path(path)).to_owned())
         }
     }
 
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
-        let req = AuthRequest{typ: 0, scheme: scheme.to_string(), auth: auth};
+        let req = AuthRequest{typ: 0, scheme: scheme.to_owned(), auth: auth};
 
-        let _: EmptyResponse = try!(self.request(OpCode::Auth, -4, req));
+        let _: EmptyResponse = try!(self.request(OpCode::Auth, -4, req, None));
 
         Ok(())
     }
@@ -128,7 +140,7 @@ impl ZooKeeper {
     pub fn create(&self, path: &str, data: Vec<u8>, acl: Vec<Acl>, mode: CreateMode) -> ZkResult<String> {
         let req = CreateRequest{path: try!(self.path(path)), data: data, acl: acl, flags: mode as i32};
 
-        let response: CreateResponse = try!(self.request(OpCode::Create, self.xid(), req));
+        let response: CreateResponse = try!(self.request(OpCode::Create, self.xid(), req, None));
 
         Ok(response.path)
     }
@@ -136,7 +148,7 @@ impl ZooKeeper {
     pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
         let req = DeleteRequest{path: try!(self.path(path)), version: version};
 
-        let _: EmptyResponse = try!(self.request(OpCode::Delete, self.xid(), req));
+        let _: EmptyResponse = try!(self.request(OpCode::Delete, self.xid(), req, None));
 
         Ok(())
     }
@@ -144,7 +156,19 @@ impl ZooKeeper {
     pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Stat> {
         let req = ExistsRequest{path: try!(self.path(path)), watch: watch};
 
-        let response: ExistsResponse = try!(self.request(OpCode::Exists, self.xid(), req));
+        let response: ExistsResponse = try!(self.request(OpCode::Exists, self.xid(), req, None));
+
+        Ok(response.stat)
+    }
+
+    pub fn exists_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<Stat> {
+        let req = ExistsRequest{path: try!(self.path(path)), watch: true};
+
+        let watch = Watch{path: path.to_owned(),
+                          watch_type: WatchType::Exist,
+                          watcher: Box::new(watcher)};
+
+        let response: ExistsResponse = try!(self.request(OpCode::Exists, self.xid(), req, Some(watch)));
 
         Ok(response.stat)
     }
@@ -152,15 +176,27 @@ impl ZooKeeper {
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
         let req = GetAclRequest{path: try!(self.path(path))};
 
-        let response: GetAclResponse = try!(self.request(OpCode::GetAcl, self.xid(), req));
+        let response: GetAclResponse = try!(self.request(OpCode::GetAcl, self.xid(), req, None));
 
         Ok(response.acl_stat)
+    }
+
+    pub fn get_children_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<Vec<String>> {
+        let req = GetChildrenRequest{path: try!(self.path(path)), watch: true};
+
+        let watch = Watch{path: path.to_owned(),
+                          watch_type: WatchType::Child,
+                          watcher: Box::new(watcher)};
+
+        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren, self.xid(), req, Some(watch)));
+
+        Ok(response.children)
     }
 
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: try!(self.path(path)), watch: watch};
 
-        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren, self.xid(), req));
+        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren, self.xid(), req, None));
 
         Ok(response.children)
     }
@@ -168,7 +204,19 @@ impl ZooKeeper {
     pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest{path: try!(self.path(path)), watch: watch};
 
-        let response: GetDataResponse = try!(self.request(OpCode::GetData, self.xid(), req));
+        let response: GetDataResponse = try!(self.request(OpCode::GetData, self.xid(), req, None));
+
+        Ok(response.data_stat)
+    }
+
+    pub fn get_data_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<(Vec<u8>, Stat)> {
+        let req = GetDataRequest{path: try!(self.path(path)), watch: true};
+
+        let watch = Watch{path: path.to_owned(),
+                          watch_type: WatchType::Data,
+                          watcher: Box::new(watcher)};
+
+        let response: GetDataResponse = try!(self.request(OpCode::GetData, self.xid(), req, Some(watch)));
 
         Ok(response.data_stat)
     }
@@ -176,7 +224,7 @@ impl ZooKeeper {
     pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
         let req = SetAclRequest{path: try!(self.path(path)), acl: acl, version: version};
 
-        let response: SetAclResponse = try!(self.request(OpCode::SetAcl, self.xid(), req));
+        let response: SetAclResponse = try!(self.request(OpCode::SetAcl, self.xid(), req, None));
 
         Ok(response.stat)
     }
@@ -184,13 +232,13 @@ impl ZooKeeper {
     pub fn set_data(&self, path: &str, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
         let req = SetDataRequest{path: try!(self.path(path)), data: data, version: version};
 
-        let response: SetDataResponse = try!(self.request(OpCode::SetData, self.xid(), req));
+        let response: SetDataResponse = try!(self.request(OpCode::SetData, self.xid(), req, None));
 
         Ok(response.stat)
     }
 
     pub fn close(&self) -> ZkResult<()> {
-        let _: EmptyResponse = try!(self.request(OpCode::CloseSession, 0, EmptyRequest));
+        let _: EmptyResponse = try!(self.request(OpCode::CloseSession, 0, EmptyRequest, None));
 
         Ok(())
     }
