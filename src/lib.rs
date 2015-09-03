@@ -24,3 +24,4 @@ mod proto;
 mod watch;
 mod zoodefs;
 mod zookeeper;
+mod recipes;

@@ -79,6 +79,7 @@ fn simple_integration_test() {
     let client = ZooKeeper::connect(&cluster.connect_string,
                                     Duration::from_secs(5),
                                     move |event: &WatchedEvent| {
+                                        println!("{:?}", event);
                                         if event.keeper_state == KeeperState::Disconnected {
                                             disconnects_watcher.fetch_add(1, Ordering::Relaxed);
                                         }

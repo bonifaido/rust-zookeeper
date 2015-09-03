@@ -176,34 +176,33 @@ impl ZkHandler {
     }
 
     fn reconnect(&mut self, event_loop: &mut EventLoop<Self>) {
-        self.buffer.clear(); // drop all requests
-
-        self.response.mark(); self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
-
         // self.state = ZkState::Connecting;
-
-        self.clear_ping_timeout(event_loop);
-
-        // reconnect loop
         loop {
-            let host = self.hosts.next();
-            info!("Connecting to new server {:?}", host);
-            self.sock = match TcpStream::connect(host) {
-                Ok(sock) => sock,
-                Err(e) => {
-                    warn!("Failed to connect {:?}: {:?}", host, e);
-                    continue
-                }
-            };
-            info!("Connected to {:?}", host);
+            self.buffer.clear(); // drop all requests
+            self.response.mark(); self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
+
+            self.clear_ping_timeout(event_loop);
+
+            {
+                let host = self.hosts.next();
+                info!("Connecting to new server {:?}", host);
+                self.sock = match TcpStream::connect(host) {
+                    Ok(sock) => sock,
+                    Err(e) => {
+                        warn!("Failed to connect {:?}: {:?}", host, e);
+                        continue
+                    }
+                };
+                info!("Connected to {:?}", host);
+            }
+
+            let request = self.connect_request();
+            self.buffer.push_back(request);
+
+            self.register(event_loop, EventSet::all());
+
             break
         }
-
-        let request = self.connect_request();
-
-        self.buffer.push_back(request);
-
-        self.register(event_loop, EventSet::all());
     }
 
     fn connect_request(&self) -> RawRequest {
