@@ -162,13 +162,13 @@ pub struct ConnectRequest {
 }
 
 impl ConnectRequest {
-    pub fn from(conn_resp: ConnectResponse, last_zxid_seen: i64) -> ConnectRequest {
+    pub fn from(conn_resp: &ConnectResponse, last_zxid_seen: i64) -> ConnectRequest {
         ConnectRequest{
             protocol_version: conn_resp.protocol_version,
             last_zxid_seen: last_zxid_seen,
             timeout: conn_resp.timeout as i32,
             session_id: conn_resp.session_id,
-            passwd: conn_resp.passwd,
+            passwd: conn_resp.passwd.clone(),
             read_only: conn_resp.read_only}
     }
 }

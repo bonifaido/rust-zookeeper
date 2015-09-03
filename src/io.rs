@@ -62,6 +62,8 @@ struct ZkHandler {
     timeout: Option<Timeout>,
     timeout_ms: u64,
     event_sender: Sender<RawResponse>,
+    conn_resp: ConnectResponse,
+    zxid: i64
 }
 
 impl ZkHandler {
@@ -75,7 +77,9 @@ impl ZkHandler {
             response: RingBuf::new(1024 * 1024), // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
             timeout: None,
             timeout_ms: timeout_ms,
-            event_sender: event_sender
+            event_sender: event_sender,
+            conn_resp: ConnectResponse::initial(timeout_ms),
+            zxid: 0
         }
     }
 
@@ -116,6 +120,7 @@ impl ZkHandler {
                             Ok(header) => header,
                             Err(e) => panic!("Failed to parse ReplyHeader {:?}", e) // TODO skip this chunk
                         };
+                        self.zxid = header.zxid;
                         let response = RawResponse{header: header, data: Cursor::new(data.bytes().to_vec())}; // TODO COPY!
                         match response.header.xid {
                             -1 => {
@@ -139,12 +144,12 @@ impl ZkHandler {
                         }
                     } else {
                         self.inflight.pop_front(); // drop the connect request
-                        let conn_resp = match ConnectResponse::read_from(&mut data) {
+                        self.conn_resp = match ConnectResponse::read_from(&mut data) {
                             Ok(conn_resp) => conn_resp,
                             Err(e) => panic!("Failed to parse ConnectResponse {:?}", e) // TODO skip this chunk
                         };
-                        info!("Connected: {:?}", conn_resp);
-                        self.timeout_ms = conn_resp.timeout / 3 * 2;
+                        info!("Connected: {:?}", self.conn_resp);
+                        self.timeout_ms = self.conn_resp.timeout / 3 * 2;
                         self.state = ZkState::Connected;
                     }
                 }
@@ -202,7 +207,7 @@ impl ZkHandler {
     }
 
     fn connect_request(&self) -> RawRequest {
-        let conn_req = ConnectRequest::from(ConnectResponse::initial(self.timeout_ms), 0);
+        let conn_req = ConnectRequest::from(&self.conn_resp, self.zxid);
         let buf = conn_req.to_len_prefixed_buf().unwrap();
         RawRequest{opcode: OpCode::Auth, data: buf, listener: None}
     }
