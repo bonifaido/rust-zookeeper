@@ -427,7 +427,7 @@ impl ReadFrom for EmptyResponse {
     fn read_from<R: Read>(_: &mut R) -> Result<EmptyResponse> { Ok(EmptyResponse) }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WatchedEvent {
     pub event_type: WatchedEventType,
     pub keeper_state: KeeperState,

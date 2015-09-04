@@ -3,7 +3,7 @@ use proto::*;
 use io::ZkIo;
 use mio;
 use num::FromPrimitive;
-use watch::{Watcher, Watch, WatchType, ZkWatch};
+use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::io::{Read, Result};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
@@ -91,7 +91,7 @@ impl ZooKeeper {
         self.xid.fetch_add(1, Ordering::Relaxed) as i32
     }
 
-    fn request<T: WriteTo, R: ReadFrom>(&self, opcode: OpCode, xid: i32, req: T, watch: Option<Watch>) -> ZkResult<R> {
+    fn request<Req: WriteTo, Resp: ReadFrom>(&self, opcode: OpCode, xid: i32, req: Req, watch: Option<Watch>) -> ZkResult<Resp> {
         let rh = RequestHeader{xid: xid, opcode: opcode};
         let buf = try!(to_len_prefixed_buf(rh, req).map_err(|_|ZkError::MarshallingError));
         
@@ -153,15 +153,17 @@ impl ZooKeeper {
         Ok(())
     }
 
-    pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Stat> {
+    pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Option<Stat>> {
         let req = ExistsRequest{path: try!(self.path(path)), watch: watch};
 
-        let response: ExistsResponse = try!(self.request(OpCode::Exists, self.xid(), req, None));
-
-        Ok(response.stat)
+        match self.request::<ExistsRequest, ExistsResponse>(OpCode::Exists, self.xid(), req, None) {
+            Ok(response) => Ok(Some(response.stat)),
+            Err(ZkError::NoNode) => Ok(None),
+            Err(e) => Err(e)
+        }
     }
 
-    pub fn exists_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<Stat> {
+    pub fn exists_w<W: FnOnce(&WatchedEvent) + Send + 'static>(&self, path: &str, watcher: W) -> ZkResult<Stat> {
         let req = ExistsRequest{path: try!(self.path(path)), watch: true};
 
         let watch = Watch{path: path.to_owned(),
@@ -181,7 +183,7 @@ impl ZooKeeper {
         Ok(response.acl_stat)
     }
 
-    pub fn get_children_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<Vec<String>> {
+    pub fn get_children_w<W: FnOnce(&WatchedEvent) + Send + 'static>(&self, path: &str, watcher: W) -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest{path: try!(self.path(path)), watch: true};
 
         let watch = Watch{path: path.to_owned(),
@@ -209,7 +211,7 @@ impl ZooKeeper {
         Ok(response.data_stat)
     }
 
-    pub fn get_data_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<(Vec<u8>, Stat)> {
+    pub fn get_data_w<W: FnOnce(&WatchedEvent) + Send + 'static>(&self, path: &str, watcher: W) -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest{path: try!(self.path(path)), watch: true};
 
         let watch = Watch{path: path.to_owned(),
@@ -244,12 +246,12 @@ impl ZooKeeper {
     }
 }
 
-// impl Drop for ZooKeeper {
-//     fn drop(&mut self) {
-//         First check if state is closed
-//         self.close().unwrap();
-//     }
-// }
+impl Drop for ZooKeeper {
+    fn drop(&mut self) {
+        // TODO First check if state is closed
+        self.close().unwrap();
+    }
+}
 
 #[cfg(test)]
 mod tests {

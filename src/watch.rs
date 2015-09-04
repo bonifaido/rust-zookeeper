@@ -2,6 +2,7 @@ use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeCh
 use proto::{ReadFrom, WatchedEvent};
 use zookeeper::RawResponse;
 use mio::{EventLoop, Handler, Sender};
+use std::boxed::FnBox;
 use std::collections::HashMap;
 use std::io;
 
@@ -15,7 +16,7 @@ pub enum WatchType {
 pub struct Watch {
     pub path: String,
     pub watch_type: WatchType,
-    pub watcher: Box<Watcher>
+    pub watcher: Box<FnBox(&WatchedEvent) + Send>
 }
 
 pub trait Watcher: Send {
@@ -77,7 +78,7 @@ impl<W: Watcher> Handler for ZkWatchHandler<W> {
                 }
             },
             WatchMessage::Watch(watch) => {
-                self.watches.insert(watch.path.to_owned(), vec![watch]);
+                self.watches.entry(watch.path.clone()).or_insert(vec![]).push(watch);
             }
         }
     }
@@ -87,11 +88,11 @@ impl<W: Watcher> ZkWatchHandler<W> {
     fn dispatch(&mut self, event: &WatchedEvent) {
         debug!("{:?}", event);
         if let Some(watches) = self.find_watches(&event) {
-            for mut watch in watches.into_iter() {
-                watch.watcher.handle(&event)
+            for watch in watches.into_iter() {
+                watch.watcher.call_box((event,))
             }
         } else {
-            self.watcher.handle(&event)
+            self.watcher.handle(event)
         }
     }
 

@@ -8,7 +8,7 @@ repository = "https://github.com/bonifaido/rust-zookeeper"
 documentation = "http://bonifaido.github.io/rust-zookeeper"
 description = "A minimal ZooKeeper client"
 readme = "README.md"
-keywords = ["zookeeper", "distributed", "coordination"]
+keywords = ["zk", "zookeeper", "distributed", "coordination"]
 
 [dependencies]
 byteorder = "0.3"
@@ -19,9 +19,14 @@ lazy_static = "0.1"
 log = "0.3"
 mio = { git = "https://github.com/carllerche/mio.git" }
 num = "0.1"
+time = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"
 
 [features]     
 unstable = []
+
+[[test]]
+name = "test"
+path = "tests/test.rs"
