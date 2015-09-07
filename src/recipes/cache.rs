@@ -1,4 +1,7 @@
+use std::thread;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender,Receiver};
 use std::collections::HashMap;
 use consts::WatchedEventType;
 use proto::WatchedEvent;
@@ -7,8 +10,34 @@ use zookeeper_ext::ZooKeeperExt;
 
 pub type Data = HashMap<String, Arc<Vec<u8>>>;
 
+pub struct ChildData;
+
+pub enum PathChildrenCacheEvent {
+    Initialized,
+    ConnectionSuspended,
+    ConnectionLost,
+    ConnectionReconnected,
+    ChildRemoved(ChildData),
+    ChildAdded(ChildData),
+    ChildUpdated(ChildData),
+}
+
+pub enum RefreshMode {
+    Standard,
+    ForceGetDataAndStat,
+}
+
+pub enum Operation {
+    Refresh(RefreshMode),
+    Event,
+    GetData(String /* path */)
+}
+
 pub struct PathChildrenCache {
-    data: Arc<Mutex<Data>>
+    zk: Arc<ZooKeeper>,
+    data: Arc<Mutex<Data>>,
+    worker_thread: Option<thread::JoinHandle<()>>,
+    channel: Option<Sender<()>>,
 }
 
 impl PathChildrenCache {
@@ -51,7 +80,6 @@ impl PathChildrenCache {
     }
 
     fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>) -> Vec<u8> {
-
         let zk1 = zk.clone();
         let path1 = path.to_owned();
 
@@ -83,9 +111,14 @@ impl PathChildrenCache {
 
         try!(zk.ensure_path(path));
 
-        try!(Self::get_children(zk, path, data.clone()));
+        try!(Self::get_children(zk.clone(), path, data.clone()));
 
-        Ok(PathChildrenCache{data: data})
+        Ok(PathChildrenCache{
+            zk: zk,
+            data: data,
+            worker_thread: None,
+            channel: None,
+        })
     }
 
     pub fn get_current_data(&self) -> Data {
@@ -94,5 +127,14 @@ impl PathChildrenCache {
 
     pub fn clear(&self) {
         self.data.lock().unwrap().clear()
+    }
+
+    pub fn start(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.channel = Some(tx);
+        
+        self.worker_thread = Some(thread::spawn(move || {
+            rx.recv();
+        }));
     }
 }
