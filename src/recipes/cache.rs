@@ -3,15 +3,17 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender,Receiver};
 use std::collections::HashMap;
-use consts::WatchedEventType;
+use consts::{WatchedEventType, ZkError};
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
 
 pub type Data = HashMap<String, Arc<Vec<u8>>>;
 
+#[derive(Debug)]
 pub struct ChildData;
 
+#[derive(Debug)]
 pub enum PathChildrenCacheEvent {
     Initialized,
     ConnectionSuspended,
@@ -22,14 +24,17 @@ pub enum PathChildrenCacheEvent {
     ChildUpdated(ChildData),
 }
 
+#[derive(Debug)]
 pub enum RefreshMode {
     Standard,
     ForceGetDataAndStat,
 }
 
+#[derive(Debug)]
 pub enum Operation {
+    Shutdown,
     Refresh(RefreshMode),
-    Event,
+    Event(PathChildrenCacheEvent),
     GetData(String /* path */)
 }
 
@@ -37,7 +42,7 @@ pub struct PathChildrenCache {
     zk: Arc<ZooKeeper>,
     data: Arc<Mutex<Data>>,
     worker_thread: Option<thread::JoinHandle<()>>,
-    channel: Option<Sender<()>>,
+    channel: Option<Sender<Operation>>,
 }
 
 impl PathChildrenCache {
@@ -134,7 +139,31 @@ impl PathChildrenCache {
         self.channel = Some(tx);
         
         self.worker_thread = Some(thread::spawn(move || {
-            rx.recv();
+            for op in rx.iter() {
+                print!("handling op {:?}", op);
+                match op {
+                    Operation::Shutdown => {
+                        break;
+                    },
+                    Operation::Refresh(mode) => {
+                    },
+                    Operation::GetData(path) => {
+                    },
+                    Operation::Event(event) => {
+                    }
+                }
+            }
         }));
     }
+
+    fn offer_operation(&self, op: Operation) -> ZkResult<()> {
+        match self.channel {
+            Some(ref chan) => {
+                chan.send(op);
+                Ok(())
+            },
+            None => Err(ZkError::APIError)
+        }
+    }
+      
 }
