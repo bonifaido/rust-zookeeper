@@ -8,6 +8,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 use std::thread;
+use std::env;
 use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
 
@@ -18,8 +19,17 @@ impl Watcher for LoggingWatcher {
     }
 }
 
+fn zk_server_urls() -> String {
+    let key = "ZOOKEEPER_SERVERS";
+    match env::var(key) {
+        Ok(val) => val,
+        Err(_) => "localhost:2181".to_string(),
+    }
+}
+
+
 fn zk_example() {
-    let zk = ZooKeeper::connect("localhost:2181/", Duration::from_secs(5), LoggingWatcher).unwrap();
+    let zk = ZooKeeper::connect(&*zk_server_urls(), Duration::from_secs(5), LoggingWatcher).unwrap();
 
     let mut tmp = String::new();
 
@@ -63,6 +73,9 @@ fn zk_example() {
 
     // println!("deleted /test -> {:?}", delete);
 
+    let watch_children = zk.get_children_w("/", LoggingWatcher);
+    println!("watch children -> {:?}", watch_children);
+    
     println!("press enter to close client");
     io::stdin().read_line(&mut tmp).unwrap();
 
