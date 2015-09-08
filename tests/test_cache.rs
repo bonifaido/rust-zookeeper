@@ -7,7 +7,6 @@ use ZkCluster;
 
 use std::sync::Arc;
 use std::time::Duration;
-use std::thread;
 use env_logger;
 
 
@@ -33,6 +32,4 @@ fn path_children_cache_test() {
     let data = path_children_cache.get_current_data();
 
     info!("Data: {:?}", data);
-
-    thread::sleep_ms(9999999);
 }
