@@ -7,6 +7,7 @@ use consts::{WatchedEventType, ZkError};
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
+use watch;
 
 pub type Data = HashMap<String, Arc<Vec<u8>>>;
 
@@ -30,15 +31,35 @@ pub enum RefreshMode {
     ForceGetDataAndStat,
 }
 
-#[derive(Debug)]
 pub enum Operation {
-    Shutdown,
-    Refresh(RefreshMode),
-    Event(PathChildrenCacheEvent),
-    GetData(String /* path */)
+    Shutdown(Option<Sender<ZkResult<bool>>>),
+    Refresh(RefreshMode, Option<Sender<ZkResult<()>>>),
+    Event(PathChildrenCacheEvent, Option<Sender<ZkResult<bool>>>),
+    GetData(String /* path */, Option<Sender<ZkResult<bool>>>),
+}
+
+use std::fmt;
+impl fmt::Debug for Operation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Operation::Shutdown(ref _sender) => {
+                write!(f, "Operation::Shutdown")
+            },
+            Operation::Refresh(ref mode, ref _sender) => {
+                write!(f, "Operation::Refresh({:?})", mode)
+            },
+            Operation::Event(ref ev, ref _sender) => {
+                write!(f, "Operation::Event({:?})", ev)
+            },
+            Operation::GetData(ref path, ref _sender) => {
+                write!(f, "Operation::GetData({})", path)
+            }
+        }
+    }
 }
 
 pub struct PathChildrenCache {
+    path: Arc<String>,
     zk: Arc<ZooKeeper>,
     data: Arc<Mutex<Data>>,
     worker_thread: Option<thread::JoinHandle<()>>,
@@ -69,7 +90,7 @@ impl PathChildrenCache {
         let mut data_locked = data.lock().unwrap();
 
         for child in children.iter() {
-            let child_path = path.to_owned() + "/" + child;
+            let child_path = join_path(path, child);
 
             if !data_locked.contains_key(&child_path) {
 
@@ -116,9 +137,8 @@ impl PathChildrenCache {
 
         try!(zk.ensure_path(path));
 
-        try!(Self::get_children(zk.clone(), path, data.clone()));
-
         Ok(PathChildrenCache{
+            path: Arc::new(path.to_string()),
             zk: zk,
             data: data,
             worker_thread: None,
@@ -137,23 +157,37 @@ impl PathChildrenCache {
     pub fn start(&mut self) {
         let (tx, rx) = mpsc::channel();
         self.channel = Some(tx);
+
+        let zk = self.zk.clone();
+        let path = self.path.clone();
+        let data = self.data.clone();
         
         self.worker_thread = Some(thread::spawn(move || {
             for op in rx.iter() {
-                print!("handling op {:?}", op);
+                println!("handling op {:?}", op);
                 match op {
-                    Operation::Shutdown => {
+                    Operation::Shutdown(maybe_chan) => {
+                        println!("shutting down worker thread");
                         break;
                     },
-                    Operation::Refresh(mode) => {
+                    Operation::Refresh(mode, maybe_chan) => {
+                        println!("getting children");
+                        let result = Self::get_children(zk.clone(), &*path, data.clone());
+                        println!("got children {:?}", result);
+                        
+                        maybe_chan.map_or((), |chan| {
+                            chan.send(result);
+                        });
                     },
-                    Operation::GetData(path) => {
+                    Operation::GetData(path, maybe_chan) => {
                     },
-                    Operation::Event(event) => {
+                    Operation::Event(event, maybe_chan) => {
                     }
                 }
             }
         }));
+
+        self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None));
     }
 
     fn offer_operation(&self, op: Operation) -> ZkResult<()> {
@@ -166,4 +200,14 @@ impl PathChildrenCache {
         }
     }
       
+}
+
+pub fn join_path(dir: &str, child: &str) -> String {
+    let dir_bytes = dir.as_bytes();
+    let mut result = dir.to_string();
+    if dir_bytes[dir_bytes.len() - 1] != ('/' as u8) {
+        result.push_str("/");
+    }
+    result.push_str(child);
+    result
 }

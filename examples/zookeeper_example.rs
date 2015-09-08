@@ -11,6 +11,7 @@ use std::thread;
 use std::env;
 use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
+use zookeeper::recipes::cache::{PathChildrenCache};
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -29,7 +30,10 @@ fn zk_server_urls() -> String {
 
 
 fn zk_example() {
-    let zk = ZooKeeper::connect(&*zk_server_urls(), Duration::from_secs(5), LoggingWatcher).unwrap();
+    let zk_urls = zk_server_urls();
+    println!("connecting to {}", zk_urls);
+    
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(5), LoggingWatcher).unwrap();
 
     let mut tmp = String::new();
 
@@ -73,19 +77,27 @@ fn zk_example() {
 
     // println!("deleted /test -> {:?}", delete);
 
-    let watch_children = zk.get_children_w("/", LoggingWatcher);
-    println!("watch children -> {:?}", watch_children);
+    let watch_children = zk.get_children_w("/", |event: &WatchedEvent| {
+        println!("watched event {:?}", event);
+    });
     
+    println!("watch children -> {:?}", watch_children);
+
+    let zk_arc = Arc::new(zk);
+    
+    let mut pcc = PathChildrenCache::new(zk_arc.clone(), "/").unwrap();
+    pcc.start();
+
     println!("press enter to close client");
     io::stdin().read_line(&mut tmp).unwrap();
 
     // The client can be shared between tasks
-    let zk = Arc::new(zk);
+    let zk_arc_captured = zk_arc.clone();
     thread::spawn(move || {
-        zk.close().unwrap();
+        zk_arc_captured.close().unwrap();
 
         // And operations return error after closed
-        match zk.exists("/test", false) {
+        match zk_arc_captured.exists("/test", false) {
             Err(err) => println!("Usage after closed should end up with error: {:?}", err),
             Ok(_) => panic!("Shouldn't happen")
         }
