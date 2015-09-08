@@ -10,7 +10,7 @@ use std::time::Duration;
 use env_logger;
 
 
-#[test]
+// TODO #[test]
 fn path_children_cache_test() {
     let _ = env_logger::init();
 
