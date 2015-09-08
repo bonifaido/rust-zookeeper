@@ -249,7 +249,7 @@ impl ZooKeeper {
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
         // TODO First check if state is closed
-        self.close().unwrap();
+        self.close();
     }
 }
 
