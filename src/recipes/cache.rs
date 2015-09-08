@@ -68,17 +68,19 @@ pub struct PathChildrenCache {
 
 impl PathChildrenCache {
 
-    fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>) -> ZkResult<()> {
+    fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<()> {
 
         let zk1 = zk.clone();
         let data1 = data.clone();
+        let ops_chan1 = ops_chan.clone();
 
         let watcher = move |event: &WatchedEvent| {
             match event.event_type {
                 WatchedEventType::NodeChildrenChanged => {
                     let path = event.path.as_ref().expect("Path absent");
+
                     // Subscribe to new changes recursively
-                    let _ = Self::get_children(zk1, path, data1); // ignore errors
+                    ops_chan1.send(Operation::Refresh(RefreshMode::Standard, None));
                 },
                 _ => error!("Unexpected: {:?}", event)
             };
@@ -94,7 +96,7 @@ impl PathChildrenCache {
 
             if !data_locked.contains_key(&child_path) {
 
-                let child_data = Self::get_data(zk.clone(), &child_path, data.clone());
+                let child_data = Self::get_data(zk.clone(), &child_path, data.clone(), ops_chan.clone());
 
                 data_locked.insert(child_path, Arc::new(child_data));
             }
@@ -105,7 +107,7 @@ impl PathChildrenCache {
         Ok(())
     }
 
-    fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>) -> Vec<u8> {
+    fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> Vec<u8> {
         let zk1 = zk.clone();
         let path1 = path.to_owned();
 
@@ -117,8 +119,7 @@ impl PathChildrenCache {
                 },
                 WatchedEventType::NodeDataChanged => {
                     // Subscribe to new changes recursively
-                    let child_data = Self::get_data(zk1, &path1, data.clone());
-                    data_locked.insert(path1, Arc::new(child_data));
+                    ops_chan.send(Operation::GetData(path1, None));
                 },
                 _ => error!("Unexpected: {:?}", event)
             };
@@ -156,11 +157,13 @@ impl PathChildrenCache {
 
     pub fn start(&mut self) {
         let (tx, rx) = mpsc::channel();
-        self.channel = Some(tx);
 
         let zk = self.zk.clone();
         let path = self.path.clone();
         let data = self.data.clone();
+        let ops_chan = tx.clone();
+
+        self.channel = Some(tx);
         
         self.worker_thread = Some(thread::spawn(move || {
             for op in rx.iter() {
@@ -172,7 +175,7 @@ impl PathChildrenCache {
                     },
                     Operation::Refresh(mode, maybe_chan) => {
                         println!("getting children");
-                        let result = Self::get_children(zk.clone(), &*path, data.clone());
+                        let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan.clone());
                         println!("got children {:?}", result);
                         
                         maybe_chan.map_or((), |chan| {
