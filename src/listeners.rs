@@ -25,7 +25,7 @@ impl<T> ListenerSet<T> where T: Send + Clone {
         }
     }
     
-    fn subscribe(&mut self, listener: Sender<T>) -> Subscription {
+    pub fn subscribe(&self, listener: Sender<T>) -> Subscription {
         let mut acquired_listeners = self.listeners.lock().unwrap();
 
         let subscription = Subscription::new();
@@ -34,22 +34,14 @@ impl<T> ListenerSet<T> where T: Send + Clone {
         subscription
     }
 
-    fn unsubscribe(&mut self, sub: Subscription) {
+    pub fn unsubscribe(&self, sub: Subscription) {
         let mut acquired_listeners = self.listeners.lock().unwrap();
 
         // channel will be close here automatically
         acquired_listeners.remove(&sub);
-        
-/*        match acquired_listeners.remove(&sub) {
-            Some(chan) => {
-                drop(chan);
-            },
-            None => {
-            }
-        }*/
     }
     
-    fn notify(&self, payload: &T) {
+    pub fn notify(&self, payload: &T) {
         let acquired_listeners = self.listeners.lock().unwrap();
         
         for listener in acquired_listeners.iter() {
