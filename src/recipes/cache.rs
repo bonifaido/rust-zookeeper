@@ -179,6 +179,13 @@ impl PathChildrenCache {
                         match state {
                             Ok(state) => {
                                 info!("zk state change {:?}", state);
+                                match state {
+                                    ZkState::Connected => {
+                                        ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None));
+                                    },
+                                    _ => {
+                                    }
+                                }
                             },
                             Err(err) => {
                                 info!("zk state chan err. shutting down. {:?}", err);
