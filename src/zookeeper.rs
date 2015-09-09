@@ -1,12 +1,14 @@
 use consts::*;
 use proto::*;
 use io::ZkIo;
+use listeners::{ListenerSet, Subscription};
 use mio;
 use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::io::{Read, Result};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::{Sender, sync_channel, SyncSender};
 use std::time::Duration;
@@ -29,7 +31,8 @@ pub struct RawResponse {
 pub struct ZooKeeper {
     chroot: Option<String>,
     xid: AtomicIsize,
-    io: mio::Sender<RawRequest>
+    io: mio::Sender<RawRequest>,
+    listeners: ListenerSet<ZkState>,
 }
 
 impl ZooKeeper {
@@ -50,7 +53,9 @@ impl ZooKeeper {
         debug!("Initiating connection to {}", connect_string);
 
         let watch = ZkWatch::new(watcher, chroot.clone());
-        let io = ZkIo::new(addrs.clone(), timeout, watch.sender());
+        let listeners = ListenerSet::<ZkState>::new();
+        let listeners1 = listeners.clone();
+        let io = ZkIo::new(addrs.clone(), timeout, watch.sender(), listeners1);
         let sender = io.sender();
 
         try!(Self::zk_thread("event", move || { watch.run().unwrap() }));
@@ -58,7 +63,9 @@ impl ZooKeeper {
 
         Ok(ZooKeeper{chroot: chroot,
                      xid: AtomicIsize::new(1),
-                     io: sender})
+                     io: sender,
+                     listeners: listeners,
+        })
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
@@ -98,9 +105,15 @@ impl ZooKeeper {
         let (resp_tx, resp_rx) = sync_channel(0);
         let request = RawRequest{opcode: opcode, data: buf, listener: Some(resp_tx), watch: watch};
 
-        try!(self.io.send(request).map_err(|_|ZkError::ConnectionLoss));
+        try!(self.io.send(request).map_err(|err| {
+            warn!("error sending request: {:?}", err);
+            ZkError::ConnectionLoss
+        }));
 
-        let mut response = try!(resp_rx.recv().map_err(|_|ZkError::ConnectionLoss));
+        let mut response = try!(resp_rx.recv().map_err(|err| {
+            warn!("error receiving response: {:?}", err);
+            ZkError::ConnectionLoss
+        }));
 
         match response.header.err {
             0 => Ok(try!(ReadFrom::read_from(&mut response.data).map_err(|_|ZkError::MarshallingError))),
@@ -245,6 +258,14 @@ impl ZooKeeper {
         let response: SetDataResponse = try!(self.request(OpCode::SetData, self.xid(), req, None));
 
         Ok(response.stat)
+    }
+
+    pub fn add_listener(&self, chan: Sender<ZkState>) -> Subscription {
+        self.listeners.subscribe(chan)
+    }
+
+    pub fn remove_listener(&self, sub: Subscription) {
+        self.listeners.unsubscribe(sub);
     }
 
     pub fn close(&self) -> ZkResult<()> {

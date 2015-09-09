@@ -3,11 +3,12 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender,Receiver};
 use std::collections::HashMap;
-use consts::{WatchedEventType, ZkError};
+use consts::{WatchedEventType, ZkError, ZkState};
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
 use watch;
+use listeners::{Subscription};
 
 pub type Data = HashMap<String, Arc<Vec<u8>>>;
 
@@ -35,7 +36,7 @@ pub enum Operation {
     Shutdown(Option<Sender<ZkResult<bool>>>),
     Refresh(RefreshMode, Option<Sender<ZkResult<()>>>),
     Event(PathChildrenCacheEvent, Option<Sender<ZkResult<bool>>>),
-    GetData(String /* path */, Option<Sender<ZkResult<bool>>>),
+    GetData(String /* path */, Option<Sender<ZkResult<Vec<u8>>>>),
 }
 
 use std::fmt;
@@ -64,6 +65,7 @@ pub struct PathChildrenCache {
     data: Arc<Mutex<Data>>,
     worker_thread: Option<thread::JoinHandle<()>>,
     channel: Option<Sender<Operation>>,
+    listener_subscription: Option<Subscription>,
 }
 
 impl PathChildrenCache {
@@ -96,7 +98,7 @@ impl PathChildrenCache {
 
             if !data_locked.contains_key(&child_path) {
 
-                let child_data = Self::get_data(zk.clone(), &child_path, data.clone(), ops_chan.clone());
+                let child_data = try!(Self::get_data(zk.clone(), &child_path, data.clone(), ops_chan.clone()));
 
                 data_locked.insert(child_path, Arc::new(child_data));
             }
@@ -107,7 +109,7 @@ impl PathChildrenCache {
         Ok(())
     }
 
-    fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> Vec<u8> {
+    fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<Vec<u8>> {
         let zk1 = zk.clone();
         let path1 = path.to_owned();
 
@@ -129,7 +131,7 @@ impl PathChildrenCache {
             //TODO Send change event
         };
 
-        zk.get_data_w(path, data_watcher).unwrap().0
+        zk.get_data_w(path, data_watcher).map(|stuff| { stuff.0 })
     }
 
     pub fn new(zk: Arc<ZooKeeper>, path: &str) -> ZkResult<PathChildrenCache> {
@@ -144,6 +146,7 @@ impl PathChildrenCache {
             data: data,
             worker_thread: None,
             channel: None,
+            listener_subscription: None,
         })
     }
 
@@ -156,40 +159,71 @@ impl PathChildrenCache {
     }
 
     pub fn start(&mut self) {
-        let (tx, rx) = mpsc::channel();
-
+        let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
+        let (listener_chan_tx, listener_chan_rx) = mpsc::channel();
+        
+        let sub = self.zk.add_listener(listener_chan_tx.clone());
+        self.listener_subscription = Some(sub);
+        
         let zk = self.zk.clone();
         let path = self.path.clone();
         let data = self.data.clone();
-        let ops_chan = tx.clone();
+        self.channel = Some(ops_chan_tx.clone());
 
-        self.channel = Some(tx);
-        
         self.worker_thread = Some(thread::spawn(move || {
-            for op in rx.iter() {
-                println!("handling op {:?}", op);
-                match op {
-                    Operation::Shutdown(maybe_chan) => {
-                        println!("shutting down worker thread");
-                        break;
+            let mut done = false;
+
+            while !done {
+                select! (
+                    state = listener_chan_rx.recv() => {
+                        match state {
+                            Ok(state) => {
+                                info!("zk state change {:?}", state);
+                            },
+                            Err(err) => {
+                                info!("zk state chan err. shutting down. {:?}", err);
+                                done = true;
+                            }
+                        }
                     },
-                    Operation::Refresh(mode, maybe_chan) => {
-                        println!("getting children");
-                        let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan.clone());
-                        println!("got children {:?}", result);
+                    op = ops_chan_rx.recv() => {
                         
-                        maybe_chan.map_or((), |chan| {
-                            chan.send(result);
-                        });
-                    },
-                    Operation::GetData(path, maybe_chan) => {
-                    },
-                    Operation::Event(event, maybe_chan) => {
-                    }
-                }
+                        debug!("handling op {:?}", op);
+                        match op {
+                            Ok(Operation::Shutdown(maybe_chan)) => {
+                                info!("shutting down worker thread");
+                                break;
+                            },
+                            Ok(Operation::Refresh(mode, maybe_chan)) => {
+                                debug!("getting children");
+                                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
+                                info!("got children {:?}", result);
+                                
+                                maybe_chan.map_or((), |chan| {
+                                    chan.send(result);
+                                });
+                            },
+                            Ok(Operation::GetData(path, maybe_chan)) => {
+                                debug!("getting data");
+                                let result = Self::get_data(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
+                                info!("got data {:?}", result);
+                                
+                                maybe_chan.map_or((), |chan| {
+                                    chan.send(result);
+                                });
+                            },
+                            Ok(Operation::Event(event, maybe_chan)) => {
+                            },
+                            Err(err) => {
+                                info!("error receiving from operations channel. shutting down worker thread");
+                                done = true;
+                            }
+                        }
+                        
+                    });
             }
         }));
-
+        
         self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None));
     }
 

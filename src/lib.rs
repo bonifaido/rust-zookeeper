@@ -1,5 +1,6 @@
 #![feature(fnbox)]
 #![feature(filling_drop)]
+#![feature(mpsc_select)]
 #![deny(unused_mut)]
 extern crate byteorder;
 extern crate bytes;
