@@ -114,7 +114,7 @@ impl ZkHandler {
 
         debug!("handle_response in {:?} state [{}]", self.state, data.bytes().len());
 
-        if self.state != ZkState::NotConnected {
+        if self.state != ZkState::Connecting {
             let header = match ReplyHeader::read_from(&mut data) {
                 Ok(header) => header,
                 Err(e) => {
