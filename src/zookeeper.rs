@@ -49,7 +49,7 @@ impl ZooKeeper {
 
         debug!("Initiating connection to {}", connect_string);
 
-        let watch = ZkWatch::new(watcher);
+        let watch = ZkWatch::new(watcher, chroot.clone());
         let io = ZkIo::new(addrs.clone(), timeout, watch.sender());
         let sender = io.sender();
 
@@ -129,6 +129,14 @@ impl ZooKeeper {
         }
     }
 
+    fn cut_chroot(&self, path: String) -> String {
+        if let Some(ref chroot) = self.chroot {
+            path[chroot.len()..].to_owned()
+        } else {
+            path
+        }
+    }
+
     pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
         let req = AuthRequest{typ: 0, scheme: scheme.to_owned(), auth: auth};
 
@@ -142,7 +150,7 @@ impl ZooKeeper {
 
         let response: CreateResponse = try!(self.request(OpCode::Create, self.xid(), req, None));
 
-        Ok(response.path)
+        Ok(self.cut_chroot(response.path))
     }
 
     pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
@@ -249,7 +257,7 @@ impl ZooKeeper {
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
         // TODO First check if state is closed
-        self.close();
+        let _ = self.close();
     }
 }
 

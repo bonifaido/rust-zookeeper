@@ -40,9 +40,9 @@ pub struct ZkWatch<W: Watcher> {
 }
 
 impl<W: Watcher> ZkWatch<W> {
-    pub fn new(watcher: W) -> Self {
+    pub fn new(watcher: W, chroot: Option<String>) -> Self {
         let event_loop = EventLoop::new().unwrap();
-        let handler = ZkWatchHandler{watcher: watcher, watches: HashMap::new()};
+        let handler = ZkWatchHandler{watcher: watcher, watches: HashMap::new(), chroot: chroot};
         ZkWatch{event_loop: event_loop, handler: handler}
     }
 
@@ -57,7 +57,8 @@ impl<W: Watcher> ZkWatch<W> {
 
 struct ZkWatchHandler<W: Watcher> {
     watcher: W,
-    watches: HashMap<String, Vec<Watch>>
+    watches: HashMap<String, Vec<Watch>>,
+    chroot: Option<String>
 }
 
 impl<W: Watcher> Handler for ZkWatchHandler<W> {
@@ -71,7 +72,10 @@ impl<W: Watcher> Handler for ZkWatchHandler<W> {
                 let mut data = response.data;
                 match response.header.err {
                     0 => match WatchedEvent::read_from(&mut data) {
-                        Ok(event) => self.dispatch(&event),
+                        Ok(mut event) => {
+                            self.cut_chroot(&mut event);
+                            self.dispatch(&event);
+                        },
                         Err(e) => error!("Failed to parse WatchedEvent {:?}", e)
                     },
                     e => error!("WatchedEvent.error {:?}", e)
@@ -85,6 +89,15 @@ impl<W: Watcher> Handler for ZkWatchHandler<W> {
 }
 
 impl<W: Watcher> ZkWatchHandler<W> {
+
+    fn cut_chroot(&self, event: &mut WatchedEvent) {
+        if let Some(ref chroot) = self.chroot {
+            if event.path.is_some() {
+                event.path = Some(event.path.as_ref().unwrap()[chroot.len()..].to_owned());
+            }
+        }
+    }
+
     fn dispatch(&mut self, event: &WatchedEvent) {
         debug!("{:?}", event);
         if let Some(watches) = self.find_watches(&event) {
