@@ -57,7 +57,7 @@ enum_from_primitive! {
 }
 
 /// Enumeration of states the client may be at any time
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ZkState {
     Associating,
     AuthFailed,
