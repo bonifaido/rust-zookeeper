@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn test_new_listener_for_chan() {
         let (tx, _rx) = mpsc::channel();
-        let mut ls = ListenerSet::<bool>::new();
+        let ls = ListenerSet::<bool>::new();
 
         ls.subscribe(tx);
     }
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_add_listener_to_set() {        
         let (tx, rx) = mpsc::channel();
-        let mut ls = ListenerSet::<bool>::new();
+        let ls = ListenerSet::<bool>::new();
 
         ls.subscribe(tx);
         ls.notify(&true);
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn test_remove_listener_from_set() {
         let (tx, rx) = mpsc::channel();
-        let mut ls = ListenerSet::<bool>::new();
+        let ls = ListenerSet::<bool>::new();
 
         let sub = ls.subscribe(tx);
         ls.unsubscribe(sub);
