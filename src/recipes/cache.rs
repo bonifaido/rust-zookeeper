@@ -1,13 +1,12 @@
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
-use std::sync::mpsc::{Sender,Receiver};
+use std::sync::mpsc::{Sender};
 use std::collections::HashMap;
 use consts::{WatchedEventType, ZkError, ZkState};
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
-use watch;
 use listeners::{Subscription};
 
 pub type Data = HashMap<String, Arc<Vec<u8>>>;
@@ -71,9 +70,6 @@ pub struct PathChildrenCache {
 impl PathChildrenCache {
 
     fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<()> {
-
-        let zk1 = zk.clone();
-        let data1 = data.clone();
         let ops_chan1 = ops_chan.clone();
 
         let watcher = move |event: &WatchedEvent| {
@@ -82,7 +78,12 @@ impl PathChildrenCache {
                     let path = event.path.as_ref().expect("Path absent");
 
                     // Subscribe to new changes recursively
-                    ops_chan1.send(Operation::Refresh(RefreshMode::Standard, None));
+                    match ops_chan1.send(Operation::Refresh(RefreshMode::Standard, None)) {
+                        Err(err) => {
+                            warn!("error sending Refresh operation to ops channel: {:?}", err);
+                        },
+                        _ => {}
+                    };
                 },
                 _ => error!("Unexpected: {:?}", event)
             };
@@ -110,7 +111,6 @@ impl PathChildrenCache {
     }
 
     fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<Vec<u8>> {
-        let zk1 = zk.clone();
         let path1 = path.to_owned();
 
         let data_watcher = move |event: &WatchedEvent| {
@@ -121,7 +121,12 @@ impl PathChildrenCache {
                 },
                 WatchedEventType::NodeDataChanged => {
                     // Subscribe to new changes recursively
-                    ops_chan.send(Operation::GetData(path1, None));
+                    match ops_chan.send(Operation::GetData(path1, None)) {
+                        Err(err) => {
+                            warn!("error sending GetData to op channel: {:?}", err);
+                        },
+                        _ => {}
+                    }
                 },
                 _ => error!("Unexpected: {:?}", event)
             };
@@ -158,7 +163,7 @@ impl PathChildrenCache {
         self.data.lock().unwrap().clear()
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self) -> ZkResult<()> {
         let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
         let (listener_chan_tx, listener_chan_rx) = mpsc::channel();
         
@@ -181,7 +186,13 @@ impl PathChildrenCache {
                                 info!("zk state change {:?}", state);
                                 match state {
                                     ZkState::Connected => {
-                                        ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None));
+                                        match ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None)) {
+                                            Err(err) => {
+                                                warn!("error sending Refresh to op channel: {:?}", err);
+                                                done = true;
+                                            },
+                                            _ => {}
+                                        }
                                     },
                                     _ => {
                                     }
@@ -194,20 +205,25 @@ impl PathChildrenCache {
                         }
                     },
                     op = ops_chan_rx.recv() => {
-                        
+
                         debug!("handling op {:?}", op);
                         match op {
-                            Ok(Operation::Shutdown(maybe_chan)) => {
+                            Ok(Operation::Shutdown(_maybe_chan)) => {
                                 info!("shutting down worker thread");
-                                break;
+                                done = true;
                             },
-                            Ok(Operation::Refresh(mode, maybe_chan)) => {
+                            Ok(Operation::Refresh(_mode, maybe_chan)) => {
                                 debug!("getting children");
                                 let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
                                 info!("got children {:?}", result);
                                 
                                 maybe_chan.map_or((), |chan| {
-                                    chan.send(result);
+                                    match chan.send(result) {
+                                        Err(err) => {
+                                            warn!("error returning Refresh result to channel: {:?}", err);
+                                        },
+                                        _ => {}
+                                    }
                                 });
                             },
                             Ok(Operation::GetData(path, maybe_chan)) => {
@@ -216,13 +232,19 @@ impl PathChildrenCache {
                                 info!("got data {:?}", result);
                                 
                                 maybe_chan.map_or((), |chan| {
-                                    chan.send(result);
+                                    match chan.send(result) {
+                                        Err(err) => {
+                                            warn!("error returning GetData result to channel: {:?}", err);
+                                        },
+                                        _ => {}
+                                    }
                                 });
                             },
-                            Ok(Operation::Event(event, maybe_chan)) => {
+                            Ok(Operation::Event(event, _maybe_chan)) => {
+                                info!("received event {:?}", event);
                             },
                             Err(err) => {
-                                info!("error receiving from operations channel. shutting down worker thread");
+                                info!("error receiving from operations channel ({:?}). shutting down worker thread", err);
                                 done = true;
                             }
                         }
@@ -231,14 +253,16 @@ impl PathChildrenCache {
             }
         }));
         
-        self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None));
+        self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat, None))
     }
 
     fn offer_operation(&self, op: Operation) -> ZkResult<()> {
         match self.channel {
             Some(ref chan) => {
-                chan.send(op);
-                Ok(())
+                chan.send(op).map_err(|err| {
+                    warn!("error submitting op to channel: {:?}", err);
+                    ZkError::APIError
+                })
             },
             None => Err(ZkError::APIError)
         }
