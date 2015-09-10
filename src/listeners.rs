@@ -4,7 +4,7 @@ use std::sync::{Arc,Mutex};
 use std::sync::mpsc::Sender;
 use snowflake::ProcessUniqueId;
 
-#[derive(Debug,Clone,Eq,PartialEq,Hash)]
+#[derive(Debug,Clone,Copy,Eq,PartialEq,Hash)]
 pub struct Subscription(ProcessUniqueId);
 
 impl Subscription {
@@ -13,15 +13,17 @@ impl Subscription {
     }
 }
 
+type ListenerMap<T> = HashMap<Subscription, Sender<T>>;
+
 #[derive(Clone)]
 pub struct ListenerSet<T> where T: Send {
-    listeners: Arc<Mutex<HashMap<Subscription, Sender<T>>>>,
+    listeners: Arc<Mutex<ListenerMap<T>>>,
 }
 
 impl<T> ListenerSet<T> where T: Send + Clone {
     pub fn new() -> Self {
         ListenerSet{
-            listeners: Arc::new(Mutex::new(HashMap::new())),
+            listeners: Arc::new(Mutex::new(ListenerMap::new())),
         }
     }
     
@@ -29,7 +31,7 @@ impl<T> ListenerSet<T> where T: Send + Clone {
         let mut acquired_listeners = self.listeners.lock().unwrap();
 
         let subscription = Subscription::new();
-        acquired_listeners.insert(subscription.clone(), listener);
+        acquired_listeners.insert(subscription, listener);
 
         subscription
     }
@@ -42,26 +44,46 @@ impl<T> ListenerSet<T> where T: Send + Clone {
     }
     
     pub fn notify(&self, payload: &T) {
-        let acquired_listeners = self.listeners.lock().unwrap();
-        
-        for listener in acquired_listeners.iter() {
-            Self::notify_listener(listener.1, payload);
+        let mut acquired_listeners = self.listeners.lock().unwrap();
+
+        let failures = self.notify_listeners(&*acquired_listeners, payload);
+
+        for failure in failures {
+            acquired_listeners.remove(&failure);
         }
     }
 
-    fn notify_listener(chan: &Sender<T>, payload: &T) {
-        chan.send(payload.clone());
+    fn notify_listeners(&self, listeners: &ListenerMap<T>, payload: &T) -> Vec<Subscription> {
+        let mut failures = vec![];
+        for listener in listeners.iter() {
+            if !self.notify_listener(&listener.1, payload) {
+                failures.push(*listener.0);
+            }
+        }
+        failures
+    }
+
+    fn notify_listener(&self, chan: &Sender<T>, payload: &T) -> bool {
+        match chan.send(payload.clone()) {
+            Ok(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.listeners.lock().unwrap().len()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ListenerSet,Subscription};
+    use super::{ListenerSet};
     use std::sync::mpsc;
 
     #[test]
     fn test_new_listener_set() {
         let ls = ListenerSet::<()>::new();
+        assert_eq!(ls.len(), 0);
     }
 
     #[test]
@@ -70,6 +92,7 @@ mod tests {
         let ls = ListenerSet::<bool>::new();
 
         ls.subscribe(tx);
+        assert_eq!(ls.len(), 1);
     }
     
     #[test]
@@ -78,8 +101,9 @@ mod tests {
         let ls = ListenerSet::<bool>::new();
 
         ls.subscribe(tx);
+        assert_eq!(ls.len(), 1);
+        
         ls.notify(&true);
-
         assert_eq!(rx.recv().is_ok(), true);
     }
 
@@ -90,9 +114,25 @@ mod tests {
 
         let sub = ls.subscribe(tx);
         ls.unsubscribe(sub);
+        assert_eq!(ls.len(), 0);
         
         ls.notify(&true);
-        
         assert_eq!(rx.recv().is_err(), true);
+    }
+
+    #[test]
+    fn test_scoped_unsubscribe() {
+        let ls = ListenerSet::<bool>::new();
+
+        {
+            let (tx, _rx) = mpsc::channel();
+            let _sub = ls.subscribe(tx);
+            assert_eq!(ls.len(), 1);
+        }
+
+        assert_eq!(ls.len(), 1);
+        
+        ls.notify(&true);
+        assert_eq!(ls.len(), 0);
     }
 }
