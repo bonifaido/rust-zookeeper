@@ -1,18 +1,18 @@
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
-use std::sync::mpsc::{Sender};
+use std::sync::mpsc::{Sender, Receiver};
 use std::collections::HashMap;
 use consts::{WatchedEventType, ZkError, ZkState};
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
-use listeners::{Subscription};
+use listeners::{ListenerSet, Subscription};
 
 pub type ChildData = Arc<Vec<u8>>;
 pub type Data = HashMap<String, ChildData>;
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum PathChildrenCacheEvent {
     Initialized,
     ConnectionSuspended,
@@ -44,6 +44,7 @@ pub struct PathChildrenCache {
     worker_thread: Option<thread::JoinHandle<()>>,
     channel: Option<Sender<Operation>>,
     listener_subscription: Option<Subscription>,
+    event_listeners: ListenerSet<PathChildrenCacheEvent>,
 }
 
 impl PathChildrenCache {
@@ -169,6 +170,7 @@ impl PathChildrenCache {
             worker_thread: None,
             channel: None,
             listener_subscription: None,
+            event_listeners: ListenerSet::new(),
         })
     }
 
@@ -201,7 +203,7 @@ impl PathChildrenCache {
         done
     }
 
-    fn handle_operation(op: Operation, zk: Arc<ZooKeeper>, path: Arc<String>, data: Arc<Mutex<Data>>, ops_chan_tx: Sender<Operation>) -> bool {
+    fn handle_operation(op: Operation, zk: Arc<ZooKeeper>, path: Arc<String>, data: Arc<Mutex<Data>>, event_listeners: ListenerSet<PathChildrenCacheEvent>, ops_chan_tx: Sender<Operation>) -> bool {
         let mut done = false;
         
         debug!("handling op {:?}", op);
@@ -227,6 +229,7 @@ impl PathChildrenCache {
             },
             Operation::Event(event) => {
                 info!("received event {:?}", event);
+                event_listeners.notify(&event);
             },
         }
         
@@ -243,6 +246,7 @@ impl PathChildrenCache {
         let zk = self.zk.clone();
         let path = self.path.clone();
         let data = self.data.clone();
+        let event_listeners = self.event_listeners.clone();
         self.channel = Some(ops_chan_tx.clone());
 
         self.worker_thread = Some(thread::spawn(move || {
@@ -264,7 +268,7 @@ impl PathChildrenCache {
                     op_result = ops_chan_rx.recv() => {
                         match op_result {
                             Ok(operation) => {
-                                done = Self::handle_operation(operation, zk.clone(), path.clone(), data.clone(), ops_chan_tx.clone());
+                                done = Self::handle_operation(operation, zk.clone(), path.clone(), data.clone(), event_listeners.clone(), ops_chan_tx.clone());
                             },
                             Err(err) => {
                                 info!("error receiving from operations channel ({:?}). shutting down worker thread", err);
@@ -276,6 +280,14 @@ impl PathChildrenCache {
         }));
         
         self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat))
+    }
+
+    pub fn add_listener(&self, subscriber: Sender<PathChildrenCacheEvent>) -> Subscription {
+        self.event_listeners.subscribe(subscriber)
+    }
+
+    pub fn remove_listener(&self, sub: Subscription) -> () {
+        self.event_listeners.unsubscribe(sub)
     }
 
     fn offer_operation(&self, op: Operation) -> ZkResult<()> {
