@@ -70,6 +70,7 @@ impl<T> ListenerSet<T> where T: Send + Clone {
         }
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.listeners.lock().unwrap().len()
     }

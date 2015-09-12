@@ -91,7 +91,7 @@ impl ZkHandler {
     }
 
     fn notify_state(&self, old_state: ZkState, new_state: ZkState) {
-        if(new_state != old_state) {
+        if new_state != old_state {
             self.state_listeners.notify(&new_state);
         }
     }

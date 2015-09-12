@@ -8,7 +8,6 @@ use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::io::{Read, Result};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::{Sender, sync_channel, SyncSender};
 use std::time::Duration;
@@ -278,7 +277,12 @@ impl ZooKeeper {
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
         // TODO First check if state is closed
-        let _ = self.close();
+        match self.close() {
+            Err(err) => {
+                info!("error closing zookeeper connection in drop: {:?}", err);
+            },
+            _ => {}
+        }
     }
 }
 

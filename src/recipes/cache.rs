@@ -75,7 +75,7 @@ impl PathChildrenCache {
         let watcher = move |event: &WatchedEvent| {
             match event.event_type {
                 WatchedEventType::NodeChildrenChanged => {
-                    let path = event.path.as_ref().expect("Path absent");
+                    let _path = event.path.as_ref().expect("Path absent");
 
                     // Subscribe to new changes recursively
                     match ops_chan1.send(Operation::Refresh(RefreshMode::Standard, None)) {
