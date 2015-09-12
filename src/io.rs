@@ -66,7 +66,8 @@ impl ZkHandler {
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
             inflight: VecDeque::new(),
-            response: RingBuf::new(1024 * 1024), // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
+            // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
+            response: RingBuf::new(1024 * 1024 * 2),
             timeout: None,
             timeout_ms: timeout_ms,
             watch_sender: watch_sender,
