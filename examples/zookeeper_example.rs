@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::thread;
 use std::env;
+use std::sync::mpsc;
 use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
 use zookeeper::recipes::cache::{PathChildrenCache};
@@ -86,7 +87,23 @@ fn zk_example() {
     let zk_arc = Arc::new(zk);
     
     let mut pcc = PathChildrenCache::new(zk_arc.clone(), "/").unwrap();
-    pcc.start();
+    match pcc.start() {
+        Err(err) => {
+            println!("error starting cache: {:?}", err);
+            return;
+        },
+        _ => {
+            println!("cache started");
+        }
+    }
+
+    let (ev_tx, ev_rx) = mpsc::channel();
+    pcc.add_listener(ev_tx);
+    thread::spawn(move || {
+        for ev in ev_rx {
+            println!("received event {:?}", ev);
+        };
+    });
 
     println!("press enter to close client");
     io::stdin().read_line(&mut tmp).unwrap();
