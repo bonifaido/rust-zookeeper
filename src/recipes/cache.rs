@@ -23,7 +23,7 @@ pub enum PathChildrenCacheEvent {
     ChildUpdated(String, ChildData),
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RefreshMode {
     Standard,
     ForceGetDataAndStat,
@@ -49,7 +49,7 @@ pub struct PathChildrenCache {
 
 impl PathChildrenCache {
 
-    fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<()> {
+    fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>, mode: RefreshMode) -> ZkResult<()> {
         let ops_chan1 = ops_chan.clone();
 
         let watcher = move |event: &WatchedEvent| {
@@ -76,7 +76,7 @@ impl PathChildrenCache {
         for child in children.iter() {
             let child_path = join_path(path, child);
 
-            if !data_locked.contains_key(&child_path) {
+            if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
 
                 let child_data = try!(Self::get_data(zk.clone(), &child_path, data.clone(), ops_chan.clone()));
 
@@ -212,9 +212,9 @@ impl PathChildrenCache {
                 info!("shutting down worker thread");
                 done = true;
             },
-            Operation::Refresh(_mode) => {
+            Operation::Refresh(mode) => {
                 debug!("getting children");
-                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
+                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), mode);
                 info!("got children {:?}", result);
             },
             Operation::GetData(path) => {
