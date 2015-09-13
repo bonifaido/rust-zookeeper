@@ -14,7 +14,7 @@ pub type Data = HashMap<String, ChildData>;
 
 #[derive(Debug,Clone)]
 pub enum PathChildrenCacheEvent {
-    Initialized,
+    Initialized(Data),
     ConnectionSuspended,
     ConnectionLost,
     ConnectionReconnected,
@@ -31,6 +31,7 @@ pub enum RefreshMode {
 
 #[derive(Debug)]
 pub enum Operation {
+    Initialize,
     Shutdown,
     Refresh(RefreshMode),
     Event(PathChildrenCacheEvent),
@@ -207,6 +208,21 @@ impl PathChildrenCache {
         let mut done = false;
         
         match op {
+            Operation::Initialize => {
+                debug!("initialising...");
+                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), RefreshMode::ForceGetDataAndStat);
+                debug!("got children {:?}", result);
+
+                match data.lock() {
+                    Ok(data) => {
+                        event_listeners.notify(&PathChildrenCacheEvent::Initialized(data.clone()));
+                    },
+                    Err(err) => {
+                        error!("error locking data hashmap: {:?}", err);
+                        done = true;
+                    }
+                }
+            },
             Operation::Shutdown => {
                 debug!("shutting down worker thread");
                 done = true;
@@ -278,7 +294,7 @@ impl PathChildrenCache {
             }
         }));
         
-        self.offer_operation(Operation::Refresh(RefreshMode::ForceGetDataAndStat))
+        self.offer_operation(Operation::Initialize)
     }
 
     pub fn add_listener(&self, subscriber: Sender<PathChildrenCacheEvent>) -> Subscription {
