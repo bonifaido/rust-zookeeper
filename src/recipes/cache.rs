@@ -1,7 +1,7 @@
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::Sender;
 use std::collections::HashMap;
 use consts::{WatchedEventType, ZkError, ZkState};
 use proto::WatchedEvent;
@@ -91,7 +91,7 @@ impl PathChildrenCache {
             }
         }
 
-        debug!("New data: {:?}", *data_locked);
+        trace!("New data: {:?}", *data_locked);
 
         Ok(())
     }
@@ -124,7 +124,7 @@ impl PathChildrenCache {
                 _ => error!("Unexpected: {:?}", event)
             };
 
-            debug!("New data: {:?}", *data_locked);
+            trace!("New data: {:?}", *data_locked);
         };
 
         zk.get_data_w(path, data_watcher).map(|stuff| { stuff.0 })
@@ -139,7 +139,7 @@ impl PathChildrenCache {
         
         match result {
             Ok(child_data) => {
-                info!("got data {:?}", child_data);
+                trace!("got data {:?}", child_data);
                 
                 let child_data = Arc::new(child_data);
                         
@@ -185,7 +185,7 @@ impl PathChildrenCache {
     fn handle_state_change(state: ZkState, ops_chan_tx: Sender<Operation>) -> bool {
         let mut done = false;
 
-        info!("zk state change {:?}", state);
+        debug!("zk state change {:?}", state);
         match state {
             ZkState::Connected => {
                 match ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
@@ -206,16 +206,15 @@ impl PathChildrenCache {
     fn handle_operation(op: Operation, zk: Arc<ZooKeeper>, path: Arc<String>, data: Arc<Mutex<Data>>, event_listeners: ListenerSet<PathChildrenCacheEvent>, ops_chan_tx: Sender<Operation>) -> bool {
         let mut done = false;
         
-        debug!("handling op {:?}", op);
         match op {
             Operation::Shutdown => {
-                info!("shutting down worker thread");
+                debug!("shutting down worker thread");
                 done = true;
             },
             Operation::Refresh(mode) => {
                 debug!("getting children");
                 let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), mode);
-                info!("got children {:?}", result);
+                debug!("got children {:?}", result);
             },
             Operation::GetData(path) => {
                 debug!("getting data");
@@ -228,7 +227,7 @@ impl PathChildrenCache {
                 }
             },
             Operation::Event(event) => {
-                info!("received event {:?}", event);
+                debug!("received event {:?}", event);
                 event_listeners.notify(&event);
             },
         }

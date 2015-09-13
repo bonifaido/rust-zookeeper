@@ -121,7 +121,7 @@ impl ZkHandler {
 
         let mut data = Cursor::new(&self.response.bytes()[..len]);
 
-        debug!("handle_response in {:?} state [{}]", self.state, data.bytes().len());
+        trace!("handle_response in {:?} state [{}]", self.state, data.bytes().len());
 
         if self.state != ZkState::Connecting {
             let header = match ReplyHeader::read_from(&mut data) {
@@ -136,11 +136,11 @@ impl ZkHandler {
             let response = RawResponse{header: header, data: Cursor::new(data.bytes().to_vec())}; // TODO COPY!
             match response.header.xid {
                 -1 => {
-                    debug!("handle_response Got a watch event!");
+                    trace!("handle_response Got a watch event!");
                     self.watch_sender.send(WatchMessage::Event(response)).unwrap();
                 },
                 -2 => {
-                    debug!("Got ping response in {:?}", self.ping_sent.to(PreciseTime::now()));
+                    trace!("Got ping response in {:?}", self.ping_sent.to(PreciseTime::now()));
                     self.inflight.pop_front();
                 },
                 _ => match self.inflight.pop_front() {
@@ -180,10 +180,10 @@ impl ZkHandler {
     fn send_response(&self, request: RawRequest, response: RawResponse) {
         match request.listener {
             Some(ref listener) => {
-                debug!("send_response Opcode is {:?}", request.opcode);
+                trace!("send_response Opcode is {:?}", request.opcode);
                 listener.send(response).unwrap();
             },
-            None => debug!("Nobody is interested in respone {:?}", request.opcode)
+            None => info!("Nobody is interested in response {:?}", request.opcode)
         }
         if let Some(watch) = request.watch {
             self.watch_sender.send(WatchMessage::Watch(watch)).unwrap();
@@ -332,7 +332,7 @@ impl Handler for ZkHandler {
     }
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, _: Self::Timeout) {
-        debug!("Pinging {:?}", self.sock.peer_addr().unwrap());
+        trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
         let ping = RawRequest{
             opcode: OpCode::Ping,
             data: PING.clone(),
