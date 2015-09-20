@@ -1,5 +1,6 @@
 #![feature(fnbox)]
 #![feature(filling_drop)]
+#![feature(mpsc_select)]
 #![deny(unused_mut)]
 extern crate byteorder;
 extern crate bytes;
@@ -12,6 +13,7 @@ extern crate lazy_static;
 extern crate log;
 extern crate mio;
 extern crate time;
+extern crate snowflake;
 
 pub use consts::*;
 pub use proto::{Acl, Stat, WatchedEvent};
@@ -25,6 +27,7 @@ mod consts;
 mod io;
 mod proto;
 mod watch;
+mod listeners;
 mod zoodefs;
 mod zookeeper;
 mod zookeeper_ext;

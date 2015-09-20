@@ -2,3 +2,4 @@
 *.iml
 target
 Cargo.lock
+*~
