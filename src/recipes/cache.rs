@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::collections::HashMap;
 use consts::{WatchedEventType, ZkError, ZkState};
+use paths::make_path;
 use proto::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
@@ -24,13 +25,13 @@ pub enum PathChildrenCacheEvent {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum RefreshMode {
+enum RefreshMode {
     Standard,
     ForceGetDataAndStat,
 }
 
 #[derive(Debug)]
-pub enum Operation {
+enum Operation {
     Initialize,
     Shutdown,
     Refresh(RefreshMode),
@@ -75,7 +76,7 @@ impl PathChildrenCache {
         let mut data_locked = data.lock().unwrap();
 
         for child in children.iter() {
-            let child_path = join_path(path, child);
+            let child_path = make_path(path, child);
 
             if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
 
@@ -317,14 +318,4 @@ impl PathChildrenCache {
         }
     }
       
-}
-
-pub fn join_path(dir: &str, child: &str) -> String {
-    let dir_bytes = dir.as_bytes();
-    let mut result = dir.to_string();
-    if dir_bytes[dir_bytes.len() - 1] != ('/' as u8) {
-        result.push_str("/");
-    }
-    result.push_str(child);
-    result
 }

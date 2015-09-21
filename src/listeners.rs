@@ -1,6 +1,5 @@
-
 use std::collections::HashMap;
-use std::sync::{Arc,Mutex};
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use snowflake::ProcessUniqueId;
 

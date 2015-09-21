@@ -25,9 +25,10 @@ pub use watch::Watcher;
 
 mod consts;
 mod io;
+mod listeners;
+pub mod paths;
 mod proto;
 mod watch;
-mod listeners;
 mod zoodefs;
 mod zookeeper;
 mod zookeeper_ext;
