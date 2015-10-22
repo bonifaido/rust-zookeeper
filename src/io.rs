@@ -158,7 +158,8 @@ impl ZkHandler {
             }
         } else {
             self.inflight.pop_front(); // drop the connect request
-            self.conn_resp = match ConnectResponse::read_from(&mut data) {
+            
+            let conn_resp = match ConnectResponse::read_from(&mut data) {
                 Ok(conn_resp) => conn_resp,
                 Err(e) => {
                     panic!("Failed to parse ConnectResponse {:?}", e);
@@ -166,13 +167,23 @@ impl ZkHandler {
                     //return
                 }
             };
-            info!("Connected: {:?}", self.conn_resp);
-            self.timeout_ms = self.conn_resp.timeout / 3 * 2;
 
             let old_state = self.state;
-            self.state = if self.conn_resp.read_only {
-                ZkState::ConnectedReadOnly } else {
-                ZkState::Connected };
+            
+            if conn_resp.timeout == 0 {
+                info!("session {} expired", self.conn_resp.session_id);
+                self.conn_resp.session_id = 0;
+                self.state = ZkState::NotConnected;
+            } else {
+                self.conn_resp = conn_resp;
+                info!("Connected: {:?}", self.conn_resp);
+                self.timeout_ms = self.conn_resp.timeout / 3 * 2;
+
+                self.state = if self.conn_resp.read_only {
+                    ZkState::ConnectedReadOnly } else {
+                    ZkState::Connected };
+            }
+            
             self.notify_state(old_state, self.state);
         }
     }
@@ -332,15 +343,19 @@ impl Handler for ZkHandler {
     }
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, _: Self::Timeout) {
-        trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
-        let ping = RawRequest{
-            opcode: OpCode::Ping,
-            data: PING.clone(),
-            listener: None,
-            watch: None
-        };
-        event_loop.channel().send(ping).unwrap();
-        self.ping_sent = PreciseTime::now();
+        if self.inflight.len() == 0 {
+            trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
+            let ping = RawRequest{
+                opcode: OpCode::Ping,
+                data: PING.clone(),
+                listener: None,
+                watch: None
+            };
+            event_loop.channel().send(ping).unwrap();
+            self.ping_sent = PreciseTime::now();
+        } else {
+            self.reconnect(event_loop);
+        }
     }
 }
 
