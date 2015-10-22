@@ -190,7 +190,7 @@ impl WriteTo for ConnectRequest {
 pub struct ConnectResponse {
     protocol_version: i32,
     pub timeout: u64, // is handled as i32
-    session_id: i64,
+    pub session_id: i64,
     passwd: Vec<u8>,
     pub read_only: bool
 }
