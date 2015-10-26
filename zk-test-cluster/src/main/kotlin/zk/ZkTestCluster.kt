@@ -8,10 +8,9 @@ import org.apache.zookeeper.ZooKeeper
 
 public object ZkTestCluster {
 
-    throws(Exception::class)
-    public fun main(args: Array<String>) {
+    public fun run(args: Array<String>) {
 
-        val instanceQty = Integer.valueOf(args[0])!!
+        val instanceQty = Integer.valueOf(args[0])
         var killedInstances = 0
 
         val cluster = TestingCluster(instanceQty)
@@ -19,19 +18,19 @@ public object ZkTestCluster {
         cluster.start()
 
         // Wait until servers start up properly and print the connectString
-        val zooKeeper = ZooKeeper(cluster.getConnectString(), 5000, object : Watcher {
+        val zooKeeper = ZooKeeper(cluster.connectString, 5000, object : Watcher {
             override fun process(event: WatchedEvent) {
-                if (event.getState() === Watcher.Event.KeeperState.SyncConnected) {
-                    println(cluster.getConnectString())
+                if (event.state === Watcher.Event.KeeperState.SyncConnected) {
+                    println(cluster.connectString)
                 }
             }
         })
 
         do {
-            val c: Char = System.`in`.read().toChar()
+            val c = System.`in`.read().toChar()
             when (c) {
                 'k' -> {
-                    cluster.getServers().get(killedInstances).close()
+                    cluster.servers[killedInstances].close()
                     println("Server killed")
                     killedInstances++
                 }
@@ -46,4 +45,4 @@ public object ZkTestCluster {
     }
 }
 
-fun main(args: Array<String>) = ZkTestCluster.main(args)
+fun main(args: Array<String>) = ZkTestCluster.run(args)
