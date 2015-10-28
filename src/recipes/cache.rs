@@ -60,12 +60,9 @@ impl PathChildrenCache {
                     let _path = event.path.as_ref().expect("Path absent");
 
                     // Subscribe to new changes recursively
-                    match ops_chan1.send(Operation::Refresh(RefreshMode::Standard)) {
-                        Err(err) => {
-                            warn!("error sending Refresh operation to ops channel: {:?}", err);
-                        },
-                        _ => {}
-                    };
+                    if let Err(err) = ops_chan1.send(Operation::Refresh(RefreshMode::Standard)) {
+                        warn!("error sending Refresh operation to ops channel: {:?}", err);
+                    }
                 },
                 _ => error!("Unexpected: {:?}", event)
             };
@@ -75,7 +72,7 @@ impl PathChildrenCache {
 
         let mut data_locked = data.lock().unwrap();
 
-        for child in children.iter() {
+        for child in &children {
             let child_path = make_path(path, child);
 
             if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
@@ -107,20 +104,14 @@ impl PathChildrenCache {
                 WatchedEventType::NodeDeleted => {
                     data_locked.remove(&path1);
 
-                    match ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildRemoved(path1.clone()))) {
-                        Err(err) => {
-                            warn!("error sending ChildRemoved event: {:?}", err);
-                        },
-                        _ => {}
+                    if let Err(err) = ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildRemoved(path1.clone()))) {
+                        warn!("error sending ChildRemoved event: {:?}", err);
                     }
                 },
                 WatchedEventType::NodeDataChanged => {
                     // Subscribe to new changes recursively
-                    match ops_chan.send(Operation::GetData(path1)) {
-                        Err(err) => {
-                            warn!("error sending GetData to op channel: {:?}", err);
-                        },
-                        _ => {}
+                    if let Err(err) = ops_chan.send(Operation::GetData(path1)) {
+                        warn!("error sending GetData to op channel: {:?}", err);
                     }
                 },
                 _ => error!("Unexpected: {:?}", event)
@@ -166,7 +157,7 @@ impl PathChildrenCache {
         try!(zk.ensure_path(path));
 
         Ok(PathChildrenCache{
-            path: Arc::new(path.to_string()),
+            path: Arc::new(path.to_owned()),
             zk: zk,
             data: data,
             worker_thread: None,
@@ -188,17 +179,10 @@ impl PathChildrenCache {
         let mut done = false;
 
         debug!("zk state change {:?}", state);
-        match state {
-            ZkState::Connected => {
-                match ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
-                    Err(err) => {
-                        warn!("error sending Refresh to op channel: {:?}", err);
-                        done = true;
-                    },
-                    _ => {}
-                }
-            },
-            _ => {
+        if let ZkState::Connected = state {
+            if let Err(err) = ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
+                warn!("error sending Refresh to op channel: {:?}", err);
+                done = true;
             }
         }
         
@@ -236,11 +220,8 @@ impl PathChildrenCache {
             Operation::GetData(path) => {
                 debug!("getting data");
                 let result = Self::update_data(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
-                match result {
-                    Err(err) => {
-                        warn!("error getting child data: {:?}", err);
-                    },
-                    _ => {}
+                if let Err(err) = result {
+                    warn!("error getting child data: {:?}", err);
                 }
             },
             Operation::Event(event) => {

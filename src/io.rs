@@ -33,7 +33,7 @@ impl Hosts {
         Hosts{addrs: addrs, index: 0}
     }
 
-    fn next<'a>(&'a mut self) -> &'a SocketAddr {
+    fn get(&mut self) -> &SocketAddr {
         let addr = &self.addrs[self.index];
         if self.addrs.len() == self.index+1 {
             self.index = 0;
@@ -221,7 +221,7 @@ impl ZkHandler {
             self.clear_ping_timeout(event_loop);
 
             {
-                let host = self.hosts.next();
+                let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
                 self.sock = match TcpStream::connect(host) {
                     Ok(sock) => sock,
@@ -257,29 +257,26 @@ impl Handler for ZkHandler {
 
         trace!("ready {:?} {:?}", token, events);
         if events.is_writable() {
-            loop {
-                match self.buffer.pop_front() {
-                    Some(mut request) => match self.sock.try_write_buf(&mut request.data) {
-                        Ok(Some(written)) if written > 0 => {
-                            trace!("Written {:?} bytes", written);
-                            if request.data.has_remaining() {
-                                self.buffer.push_front(request);
-                                break
-                            } else {
-                                self.inflight.push_back(request);
+            while let Some(mut request) = self.buffer.pop_front() {
+                match self.sock.try_write_buf(&mut request.data) {
+                    Ok(Some(written)) if written > 0 => {
+                        trace!("Written {:?} bytes", written);
+                        if request.data.has_remaining() {
+                            self.buffer.push_front(request);
+                            break
+                        } else {
+                            self.inflight.push_back(request);
 
-                                // Sent a full message, clear the ping timeout
-                                self.clear_ping_timeout(event_loop);
-                            }
-                        },
-                        Ok(None) => trace!("Spurious write"),
-                        Ok(Some(_)) => warn!("Connection closed: write"),
-                        Err(e) => {
-                            error!("Failed to write socket: {:?}", e);
-                            self.reconnect(event_loop);
+                            // Sent a full message, clear the ping timeout
+                            self.clear_ping_timeout(event_loop);
                         }
                     },
-                    None => break
+                    Ok(None) => trace!("Spurious write"),
+                    Ok(Some(_)) => warn!("Connection closed: write"),
+                    Err(e) => {
+                        error!("Failed to write socket: {:?}", e);
+                        self.reconnect(event_loop);
+                    }
                 }
             }
             self.timeout = Some(event_loop.timeout_ms((), self.timeout_ms).unwrap());
@@ -298,23 +295,21 @@ impl Handler for ZkHandler {
                 }
             }
         }
-        if events.is_hup() {
-            if self.state != ZkState::Closed {
-                // If we were connected
-                // fn send_watched_event(keeper_state: KeeperState) {
-                //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
-                //                                    keeper_state: keeper_state,
-                //                                    path: None}) {
-                //         Ok(()) => (),
-                //         Err(e) => panic!("Reader/Writer: Event died {}", e)
-                //     }
-                // }
-                let old_state = self.state;
-                self.state = ZkState::NotConnected;
-                self.notify_state(old_state, self.state);
-                
-                self.reconnect(event_loop);
-            }
+        if (events.is_hup()) && (self.state != ZkState::Closed) {
+            // If we were connected
+            // fn send_watched_event(keeper_state: KeeperState) {
+            //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
+            //                                    keeper_state: keeper_state,
+            //                                    path: None}) {
+            //         Ok(()) => (),
+            //         Err(e) => panic!("Reader/Writer: Event died {}", e)
+            //     }
+            // }
+            let old_state = self.state;
+            self.state = ZkState::NotConnected;
+            self.notify_state(old_state, self.state);
+
+            self.reconnect(event_loop);
         }
 
         // Not sure that we need to write, but we always need to read, because of watches
@@ -343,7 +338,7 @@ impl Handler for ZkHandler {
     }
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, _: Self::Timeout) {
-        if self.inflight.len() == 0 {
+        if self.inflight.is_empty() {
             trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
             let ping = RawRequest{
                 opcode: OpCode::Ping,

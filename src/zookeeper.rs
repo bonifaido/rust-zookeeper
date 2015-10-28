@@ -276,12 +276,8 @@ impl ZooKeeper {
 
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
-        // TODO First check if state is closed
-        match self.close() {
-            Err(err) => {
-                info!("error closing zookeeper connection in drop: {:?}", err);
-            },
-            _ => {}
+        if let Err(err) = self.close() {
+            info!("error closing zookeeper connection in drop: {:?}", err);
         }
     }
 }

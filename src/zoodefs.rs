@@ -1,5 +1,5 @@
 pub mod perms {
-    pub const READ: i32 = 1 << 0;
+    pub const READ: i32 = 1;
     pub const WRITE: i32 = 1 << 1;
     pub const CREATE: i32 = 1 << 2;
     pub const DELETE: i32 = 1 << 3;
