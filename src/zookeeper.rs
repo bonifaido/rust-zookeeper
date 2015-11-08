@@ -80,7 +80,7 @@ impl ZooKeeper {
 
         let mut addrs = Vec::new();
         for addr_str in connect_string[..end].split(',') {
-            let addr = match addr_str.to_socket_addrs() {
+            let addr = match addr_str.trim().to_socket_addrs() {
                 Ok(mut addrs) => match addrs.nth(0) {
                     Some(addr) => addr,
                     None => return Err(ZkError::BadArguments)
