@@ -42,7 +42,7 @@ fn zk_test() {
 
 
     // Check that during inactivity, pinging keeps alive the connection
-    thread::sleep_ms(8000);
+    thread::sleep(Duration::from_secs(8));
 
 
     // Set/Get Big-Data(tm)
@@ -72,7 +72,7 @@ fn zk_test() {
 
     cluster.kill_an_instance();
 
-    thread::sleep_ms(1000);
+    thread::sleep(Duration::from_secs(1));
 
     // TODO once `manual` events are possible
     // assert_eq!(disconnects.load(Ordering::Relaxed), 1);
