@@ -286,7 +286,7 @@ impl WriteTo for DeleteRequest {
     }
 }
 
-struct StringAndBoolRequest {
+pub struct StringAndBoolRequest {
     pub path: String,
     pub watch: bool
 }

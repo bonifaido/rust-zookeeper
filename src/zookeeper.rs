@@ -5,7 +5,7 @@ use listeners::{ListenerSet, Subscription};
 use mio;
 use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
-use std::io::{Read, Result};
+use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};

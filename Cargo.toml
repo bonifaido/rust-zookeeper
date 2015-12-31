@@ -12,12 +12,11 @@ keywords = ["zk", "zookeeper", "distributed", "coordination"]
 
 [dependencies]
 byteorder = "0.3"
-# TODO mio specifies this version exactly!
-bytes = { git = "https://github.com/carllerche/bytes", rev = "7edb577d0a" }
+bytes = "0.3"
 enum_primitive = "0.1"
 lazy_static = "0.1"
 log = "0.3"
-mio = { git = "https://github.com/carllerche/mio.git" }
+mio = "0.5"
 num = "0.1"
 time = "0.1"
 snowflake = "1.0.0"
