@@ -12,7 +12,6 @@ use time::PreciseTime;
 use std::collections::VecDeque;
 use std::io;
 use std::io::Cursor;
-use std::mem;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -63,7 +62,7 @@ struct ZkHandler {
 impl ZkHandler {
     fn new(addrs: Vec<SocketAddr>, timeout_ms: u64, watch_sender: Sender<WatchMessage>, state_listeners: ListenerSet<ZkState>) -> ZkHandler {
         ZkHandler{
-            sock: unsafe{mem::dropped()},
+            sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
             state: ZkState::NotConnected,
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
