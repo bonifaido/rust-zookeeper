@@ -237,7 +237,7 @@ impl PathChildrenCache {
         let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
         let (listener_chan_tx, listener_chan_rx) = mpsc::channel();
         
-        let sub = self.zk.add_listener(listener_chan_tx.clone());
+        let sub = self.zk.add_listener(listener_chan_tx);
         self.listener_subscription = Some(sub);
         
         let zk = self.zk.clone();
