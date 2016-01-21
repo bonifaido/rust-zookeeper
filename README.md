@@ -5,11 +5,11 @@
 [![Version](https://img.shields.io/crates/v/zookeeper.svg)](https://crates.io/crates/zookeeper)
 [![License](https://img.shields.io/crates/l/zookeeper.svg)](http://opensource.org/licenses/MIT)
 
-Zookeeper client written 100% in Rust - Work in Progress
+Zookeeper client written 100% in Rust
 
 This library is intended to be equivalent with the official (low-level) [ZooKeeper][javadoc] client which ships with the official ZK distribution.
 
-I have plans to implement recipes and more complex [Curator][curator] like logic as well, but that takes a lot of time, so pull requests are more than welcome!
+I have plans to implement recipes and more complex [Curator][curator] like logic as well, but that takes a lot of time, so pull requests are more than welcome! At the moment only PathChildrenCache is implemented.
 
 ## Usage
 
@@ -17,7 +17,7 @@ Put this in your Cargo.toml:
 
 ```ini
 [dependencies]
-zookeeper = { git = "https://github.com/bonifaido/rust-zookeeper.git" }
+zookeeper = "0.2"
 ```
 
 And this in your crate root:
