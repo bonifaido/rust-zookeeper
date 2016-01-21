@@ -122,7 +122,7 @@ impl PathChildrenCache {
                 }
                 WatchedEventType::NodeDataChanged => {
                     // Subscribe to new changes recursively
-                    if let Err(err) = ops_chan.send(Operation::GetData(path1)) {
+                    if let Err(err) = ops_chan.send(Operation::GetData(path1.clone())) {
                         warn!("error sending GetData to op channel: {:?}", err);
                     }
                 }

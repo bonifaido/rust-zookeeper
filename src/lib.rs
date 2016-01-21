@@ -1,4 +1,3 @@
-#![feature(fnbox)]
 #![deny(unused_mut)]
 extern crate byteorder;
 extern crate bytes;

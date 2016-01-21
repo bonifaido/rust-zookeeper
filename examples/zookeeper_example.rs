@@ -16,7 +16,7 @@ use zookeeper::recipes::cache::PathChildrenCache;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
-    fn handle(&mut self, e: &WatchedEvent) {
+    fn handle(&self, e: &WatchedEvent) {
         info!("{:?}", e)
     }
 }

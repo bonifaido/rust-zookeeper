@@ -43,28 +43,11 @@ impl<T> ListenerSet<T> where T: Send + Clone
     }
 
     pub fn notify(&self, payload: &T) {
-        let mut acquired_listeners = self.listeners.lock().unwrap();
+        let listeners = self.listeners.lock().unwrap();
 
-        let failures = self.notify_listeners(&*acquired_listeners, payload);
-
-        for failure in failures {
-            acquired_listeners.remove(&failure);
+        for listener in listeners.values() {
+            listener(payload.clone())
         }
-    }
-
-    fn notify_listeners(&self, listeners: &ListenerMap<T>, payload: &T) -> Vec<Subscription> {
-        let mut failures = vec![];
-        for listener in listeners.iter() {
-            if !self.notify_listener(listener.1, payload) {
-                failures.push(*listener.0);
-            }
-        }
-        failures
-    }
-
-    fn notify_listener(&self, listener: &Box<Fn(T) + Send + 'static>, payload: &T) -> bool {
-        (*listener)(payload.clone());
-        true
     }
 
     #[allow(dead_code)]
@@ -73,64 +56,47 @@ impl<T> ListenerSet<T> where T: Send + Clone
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::{ListenerSet};
-//     use std::sync::mpsc;
+#[cfg(test)]
+mod tests {
+    use super::{ListenerSet};
+    use std::sync::mpsc;
 
-//     #[test]
-//     fn test_new_listener_set() {
-//         let ls = ListenerSet::<()>::new();
-//         assert_eq!(ls.len(), 0);
-//     }
+    #[test]
+    fn test_new_listener_set() {
+        let ls = ListenerSet::<()>::new();
+        assert_eq!(ls.len(), 0);
+    }
 
-//     #[test]
-//     fn test_new_listener_for_chan() {
-//         let (tx, _rx) = mpsc::channel();
-//         let ls = ListenerSet::<bool>::new();
+    #[test]
+    fn test_new_listener_for_chan() {
+        let ls = ListenerSet::<bool>::new();
 
-//         ls.subscribe(tx);
-//         assert_eq!(ls.len(), 1);
-//     }
+        ls.subscribe(|_e| {});
+        assert_eq!(ls.len(), 1);
+    }
 
-//     #[test]
-//     fn test_add_listener_to_set() {
-//         let (tx, rx) = mpsc::channel();
-//         let ls = ListenerSet::<bool>::new();
+    #[test]
+    fn test_add_listener_to_set() {
+        let (tx, rx) = mpsc::channel();
+        let ls = ListenerSet::<bool>::new();
 
-//         ls.subscribe(tx);
-//         assert_eq!(ls.len(), 1);
+        ls.subscribe(move |e| tx.send(e).unwrap());
+        assert_eq!(ls.len(), 1);
 
-//         ls.notify(&true);
-//         assert_eq!(rx.recv().is_ok(), true);
-//     }
+        ls.notify(&true);
+        assert_eq!(rx.recv().is_ok(), true);
+    }
 
-//     #[test]
-//     fn test_remove_listener_from_set() {
-//         let (tx, rx) = mpsc::channel();
-//         let ls = ListenerSet::<bool>::new();
+    #[test]
+    fn test_remove_listener_from_set() {
+        let (tx, rx) = mpsc::channel();
+        let ls = ListenerSet::<bool>::new();
 
-//         let sub = ls.subscribe(tx);
-//         ls.unsubscribe(sub);
-//         assert_eq!(ls.len(), 0);
+        let sub = ls.subscribe(move |e| tx.send(e).unwrap());
+        ls.unsubscribe(sub);
+        assert_eq!(ls.len(), 0);
 
-//         ls.notify(&true);
-//         assert_eq!(rx.recv().is_err(), true);
-//     }
-
-//     #[test]
-//     fn test_scoped_unsubscribe() {
-//         let ls = ListenerSet::<bool>::new();
-
-//         {
-//             let (tx, _rx) = mpsc::channel();
-//             let _sub = ls.subscribe(tx);
-//             assert_eq!(ls.len(), 1);
-//         }
-
-// assert_eq!(ls.len(), 1);
-
-//         ls.notify(&true);
-//         assert_eq!(ls.len(), 0);
-//     }
-// }
+        ls.notify(&true);
+        assert_eq!(rx.recv().is_err(), true);
+    }
+}
