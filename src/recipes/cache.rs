@@ -37,6 +37,7 @@ enum Operation {
     Refresh(RefreshMode),
     Event(PathChildrenCacheEvent),
     GetData(String /* path */),
+    ZkStateEvent(ZkState)
 }
 
 pub struct PathChildrenCache {
@@ -228,6 +229,9 @@ impl PathChildrenCache {
                 debug!("received event {:?}", event);
                 event_listeners.notify(&event);
             },
+            Operation::ZkStateEvent(state) => {
+                done = Self::handle_state_change(state, ops_chan_tx.clone());
+            }
         }
         
         done
@@ -235,9 +239,9 @@ impl PathChildrenCache {
 
     pub fn start(&mut self) -> ZkResult<()> {
         let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
-        let (listener_chan_tx, listener_chan_rx) = mpsc::channel();
+        let ops_chan_rx_zk_events = ops_chan_tx.clone();
         
-        let sub = self.zk.add_listener(listener_chan_tx);
+        let sub = self.zk.add_listener(move |s| ops_chan_rx_zk_events.send(Operation::ZkStateEvent(s)).unwrap() );
         self.listener_subscription = Some(sub);
         
         let zk = self.zk.clone();
@@ -250,36 +254,22 @@ impl PathChildrenCache {
             let mut done = false;
 
             while !done {
-                select! (
-                    state_result = listener_chan_rx.recv() => {
-                        match state_result {
-                            Ok(state) => {
-                                done = Self::handle_state_change(state, ops_chan_tx.clone());
-                            },
-                            Err(err) => {
-                                info!("zk state chan err. shutting down. {:?}", err);
-                                done = true;
-                            }
-                        }
+                match ops_chan_rx.recv() {
+                    Ok(operation) => {
+                        done = Self::handle_operation(operation, zk.clone(), path.clone(), data.clone(), event_listeners.clone(), ops_chan_tx.clone());
                     },
-                    op_result = ops_chan_rx.recv() => {
-                        match op_result {
-                            Ok(operation) => {
-                                done = Self::handle_operation(operation, zk.clone(), path.clone(), data.clone(), event_listeners.clone(), ops_chan_tx.clone());
-                            },
-                            Err(err) => {
-                                info!("error receiving from operations channel ({:?}). shutting down worker thread", err);
-                                done = true;                            
-                            }
-                        }
-                    });
+                    Err(err) => {
+                        info!("error receiving from operations channel ({:?}). shutting down worker thread", err);
+                        done = true;                            
+                    }
+                }
             }
         }));
         
         self.offer_operation(Operation::Initialize)
     }
 
-    pub fn add_listener(&self, subscriber: Sender<PathChildrenCacheEvent>) -> Subscription {
+    pub fn add_listener<Listener: Fn(PathChildrenCacheEvent) + Send + 'static>(&self, subscriber: Listener) -> Subscription {
         self.event_listeners.subscribe(subscriber)
     }
 
@@ -298,5 +288,4 @@ impl PathChildrenCache {
             None => Err(ZkError::APIError)
         }
     }
-      
 }

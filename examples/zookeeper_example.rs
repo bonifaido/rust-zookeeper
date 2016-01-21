@@ -98,7 +98,7 @@ fn zk_example() {
     }
 
     let (ev_tx, ev_rx) = mpsc::channel();
-    pcc.add_listener(ev_tx);
+    pcc.add_listener(move |e| ev_tx.send(e).unwrap() );
     thread::spawn(move || {
         for ev in ev_rx {
             println!("received event {:?}", ev);

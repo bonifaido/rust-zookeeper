@@ -9,7 +9,7 @@ use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};
-use std::sync::mpsc::{Sender, sync_channel, SyncSender};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::time::Duration;
 use std::thread;
 
@@ -259,8 +259,8 @@ impl ZooKeeper {
         Ok(response.stat)
     }
 
-    pub fn add_listener(&self, chan: Sender<ZkState>) -> Subscription {
-        self.listeners.subscribe(chan)
+    pub fn add_listener<Listener: Fn(ZkState) + Send + 'static>(&self, listener: Listener) -> Subscription {
+        self.listeners.subscribe(listener)
     }
 
     pub fn remove_listener(&self, sub: Subscription) {
