@@ -37,7 +37,7 @@ enum Operation {
     Refresh(RefreshMode),
     Event(PathChildrenCacheEvent),
     GetData(String /* path */),
-    ZkStateEvent(ZkState)
+    ZkStateEvent(ZkState),
 }
 
 pub struct PathChildrenCache {
@@ -51,8 +51,12 @@ pub struct PathChildrenCache {
 }
 
 impl PathChildrenCache {
-
-    fn get_children(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>, mode: RefreshMode) -> ZkResult<()> {
+    fn get_children(zk: Arc<ZooKeeper>,
+                    path: &str,
+                    data: Arc<Mutex<Data>>,
+                    ops_chan: Sender<Operation>,
+                    mode: RefreshMode)
+                    -> ZkResult<()> {
         let ops_chan1 = ops_chan.clone();
 
         let watcher = move |event: &WatchedEvent| {
@@ -64,8 +68,8 @@ impl PathChildrenCache {
                     if let Err(err) = ops_chan1.send(Operation::Refresh(RefreshMode::Standard)) {
                         warn!("error sending Refresh operation to ops channel: {:?}", err);
                     }
-                },
-                _ => error!("Unexpected: {:?}", event)
+                }
+                _ => error!("Unexpected: {:?}", event),
             };
         };
 
@@ -78,10 +82,13 @@ impl PathChildrenCache {
 
             if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
 
-                let child_data = try!(Self::get_data(zk.clone(), &child_path, data.clone(), ops_chan.clone()));
+                let child_data = try!(Self::get_data(zk.clone(),
+                                                     &child_path,
+                                                     data.clone(),
+                                                     ops_chan.clone()));
 
                 let child_data = Arc::new(child_data);
-                
+
                 data_locked.insert(child_path.clone(), child_data.clone());
 
                 try!(ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildAdded(child_path, child_data))).map_err(|err| {
@@ -96,7 +103,11 @@ impl PathChildrenCache {
         Ok(())
     }
 
-    fn get_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan: Sender<Operation>) -> ZkResult<Vec<u8>> {
+    fn get_data(zk: Arc<ZooKeeper>,
+                path: &str,
+                data: Arc<Mutex<Data>>,
+                ops_chan: Sender<Operation>)
+                -> ZkResult<Vec<u8>> {
         let path1 = path.to_owned();
 
         let data_watcher = move |event: &WatchedEvent| {
@@ -108,42 +119,48 @@ impl PathChildrenCache {
                     if let Err(err) = ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildRemoved(path1.clone()))) {
                         warn!("error sending ChildRemoved event: {:?}", err);
                     }
-                },
+                }
                 WatchedEventType::NodeDataChanged => {
                     // Subscribe to new changes recursively
                     if let Err(err) = ops_chan.send(Operation::GetData(path1)) {
                         warn!("error sending GetData to op channel: {:?}", err);
                     }
-                },
-                _ => error!("Unexpected: {:?}", event)
+                }
+                _ => error!("Unexpected: {:?}", event),
             };
 
             trace!("New data: {:?}", *data_locked);
         };
 
-        zk.get_data_w(path, data_watcher).map(|stuff| { stuff.0 })
+        zk.get_data_w(path, data_watcher).map(|stuff| stuff.0)
     }
 
-    fn update_data(zk: Arc<ZooKeeper>, path: &str, data: Arc<Mutex<Data>>, ops_chan_tx: Sender<Operation>) -> ZkResult<()> {
+    fn update_data(zk: Arc<ZooKeeper>,
+                   path: &str,
+                   data: Arc<Mutex<Data>>,
+                   ops_chan_tx: Sender<Operation>)
+                   -> ZkResult<()> {
         let mut data_locked = data.lock().unwrap();
-        
+
         let path = path.to_owned();
-        
+
         let result = Self::get_data(zk.clone(), &path, data.clone(), ops_chan_tx.clone());
-        
+
         match result {
             Ok(child_data) => {
                 trace!("got data {:?}", child_data);
-                
+
                 let child_data = Arc::new(child_data);
-                        
+
                 data_locked.insert(path.clone(), child_data.clone());
-                
-                ops_chan_tx.send(Operation::Event(PathChildrenCacheEvent::ChildUpdated(path, child_data))).map_err(|err| {
-                    warn!("error sending ChildUpdated event: {:?}", err);
-                    ZkError::APIError
-                })
-            },
+
+                ops_chan_tx.send(Operation::Event(PathChildrenCacheEvent::ChildUpdated(path,
+                                                                                       child_data)))
+                           .map_err(|err| {
+                               warn!("error sending ChildUpdated event: {:?}", err);
+                               ZkError::APIError
+                           })
+            }
             Err(err) => {
                 warn!("error getting child data: {:?}", err);
                 Err(ZkError::APIError)
@@ -157,7 +174,7 @@ impl PathChildrenCache {
 
         try!(zk.ensure_path(path));
 
-        Ok(PathChildrenCache{
+        Ok(PathChildrenCache {
             path: Arc::new(path.to_owned()),
             zk: zk,
             data: data,
@@ -181,69 +198,89 @@ impl PathChildrenCache {
 
         debug!("zk state change {:?}", state);
         if let ZkState::Connected = state {
-            if let Err(err) = ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
+            if let Err(err) =
+                   ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
                 warn!("error sending Refresh to op channel: {:?}", err);
                 done = true;
             }
         }
-        
+
         done
     }
 
-    fn handle_operation(op: Operation, zk: Arc<ZooKeeper>, path: Arc<String>, data: Arc<Mutex<Data>>, event_listeners: ListenerSet<PathChildrenCacheEvent>, ops_chan_tx: Sender<Operation>) -> bool {
+    fn handle_operation(op: Operation,
+                        zk: Arc<ZooKeeper>,
+                        path: Arc<String>,
+                        data: Arc<Mutex<Data>>,
+                        event_listeners: ListenerSet<PathChildrenCacheEvent>,
+                        ops_chan_tx: Sender<Operation>)
+                        -> bool {
         let mut done = false;
-        
+
         match op {
             Operation::Initialize => {
                 debug!("initialising...");
-                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), RefreshMode::ForceGetDataAndStat);
+                let result = Self::get_children(zk.clone(),
+                                                &*path,
+                                                data.clone(),
+                                                ops_chan_tx.clone(),
+                                                RefreshMode::ForceGetDataAndStat);
                 debug!("got children {:?}", result);
 
                 match data.lock() {
                     Ok(data) => {
                         event_listeners.notify(&PathChildrenCacheEvent::Initialized(data.clone()));
-                    },
+                    }
                     Err(err) => {
                         error!("error locking data hashmap: {:?}", err);
                         done = true;
                     }
                 }
-            },
+            }
             Operation::Shutdown => {
                 debug!("shutting down worker thread");
                 done = true;
-            },
+            }
             Operation::Refresh(mode) => {
                 debug!("getting children");
-                let result = Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), mode);
+                let result = Self::get_children(zk.clone(),
+                                                &*path,
+                                                data.clone(),
+                                                ops_chan_tx.clone(),
+                                                mode);
                 debug!("got children {:?}", result);
-            },
+            }
             Operation::GetData(path) => {
                 debug!("getting data");
-                let result = Self::update_data(zk.clone(), &*path, data.clone(), ops_chan_tx.clone());
+                let result = Self::update_data(zk.clone(),
+                                               &*path,
+                                               data.clone(),
+                                               ops_chan_tx.clone());
                 if let Err(err) = result {
                     warn!("error getting child data: {:?}", err);
                 }
-            },
+            }
             Operation::Event(event) => {
                 debug!("received event {:?}", event);
                 event_listeners.notify(&event);
-            },
+            }
             Operation::ZkStateEvent(state) => {
                 done = Self::handle_state_change(state, ops_chan_tx.clone());
             }
         }
-        
+
         done
     }
 
     pub fn start(&mut self) -> ZkResult<()> {
         let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
         let ops_chan_rx_zk_events = ops_chan_tx.clone();
-        
-        let sub = self.zk.add_listener(move |s| ops_chan_rx_zk_events.send(Operation::ZkStateEvent(s)).unwrap() );
+
+        let sub = self.zk.add_listener(move |s| {
+            ops_chan_rx_zk_events.send(Operation::ZkStateEvent(s)).unwrap()
+        });
         self.listener_subscription = Some(sub);
-        
+
         let zk = self.zk.clone();
         let path = self.path.clone();
         let data = self.data.clone();
@@ -256,20 +293,29 @@ impl PathChildrenCache {
             while !done {
                 match ops_chan_rx.recv() {
                     Ok(operation) => {
-                        done = Self::handle_operation(operation, zk.clone(), path.clone(), data.clone(), event_listeners.clone(), ops_chan_tx.clone());
-                    },
+                        done = Self::handle_operation(operation,
+                                                      zk.clone(),
+                                                      path.clone(),
+                                                      data.clone(),
+                                                      event_listeners.clone(),
+                                                      ops_chan_tx.clone());
+                    }
                     Err(err) => {
-                        info!("error receiving from operations channel ({:?}). shutting down worker thread", err);
-                        done = true;                            
+                        info!("error receiving from operations channel ({:?}). shutting down \
+                               worker thread",
+                              err);
+                        done = true;
                     }
                 }
             }
         }));
-        
+
         self.offer_operation(Operation::Initialize)
     }
 
-    pub fn add_listener<Listener: Fn(PathChildrenCacheEvent) + Send + 'static>(&self, subscriber: Listener) -> Subscription {
+    pub fn add_listener<Listener: Fn(PathChildrenCacheEvent) + Send + 'static>(&self,
+                                                                               subscriber: Listener)
+                                                                               -> Subscription {
         self.event_listeners.subscribe(subscriber)
     }
 
@@ -284,8 +330,8 @@ impl PathChildrenCache {
                     warn!("error submitting op to channel: {:?}", err);
                     ZkError::APIError
                 })
-            },
-            None => Err(ZkError::APIError)
+            }
+            None => Err(ZkError::APIError),
         }
     }
 }

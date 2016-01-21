@@ -23,17 +23,21 @@ fn zk_test() {
 
     // Connect to the test cluster
     let zk = ZooKeeper::connect(&cluster.connect_string,
-                                    Duration::from_secs(5),
-                                    move |event: &WatchedEvent| {
-                                        info!("{:?}", event);
-                                        if event.keeper_state == KeeperState::Disconnected {
-                                            disconnects_watcher.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                    }).unwrap();
+                                Duration::from_secs(5),
+                                move |event: &WatchedEvent| {
+                                    info!("{:?}", event);
+                                    if event.keeper_state == KeeperState::Disconnected {
+                                        disconnects_watcher.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                })
+                 .unwrap();
 
 
     // Do the tests
-    let create = zk.create("/test", vec![8,8], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
+    let create = zk.create("/test",
+                           vec![8, 8],
+                           acls::OPEN_ACL_UNSAFE.clone(),
+                           CreateMode::Ephemeral);
     assert_eq!(create.ok(), Some("/test".to_owned()));
 
 
@@ -64,7 +68,8 @@ fn zk_test() {
 
     let mut sorted_children = children.unwrap();
     sorted_children.sort();
-    assert_eq!(sorted_children, vec!["test".to_owned(), "zookeeper".to_owned()]);
+    assert_eq!(sorted_children,
+               vec!["test".to_owned(), "zookeeper".to_owned()]);
 
 
     // Let's see what happens when the connected server goes down

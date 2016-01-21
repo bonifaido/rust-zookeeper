@@ -8,11 +8,15 @@ pub mod perms {
 }
 
 pub mod acls {
-    use ::perms;
+    use perms;
     use proto::Acl;
 
     fn acl(perm: i32, scheme: &str, id: &str) -> Vec<Acl> {
-        vec![Acl{perms: perm, scheme: scheme.to_owned(), id: id.to_owned()}]
+        vec![Acl {
+                 perms: perm,
+                 scheme: scheme.to_owned(),
+                 id: id.to_owned(),
+             }]
     }
 
     lazy_static!{

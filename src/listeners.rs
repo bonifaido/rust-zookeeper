@@ -14,17 +14,18 @@ impl Subscription {
 type ListenerMap<T> = HashMap<Subscription, Box<Fn(T) + Send + 'static>>;
 
 #[derive(Clone)]
-pub struct ListenerSet<T> where T: Send {
+pub struct ListenerSet<T>
+    where T: Send
+{
     listeners: Arc<Mutex<ListenerMap<T>>>,
 }
 
-impl<T> ListenerSet<T> where T: Send + Clone {
+impl<T> ListenerSet<T> where T: Send + Clone
+{
     pub fn new() -> Self {
-        ListenerSet{
-            listeners: Arc::new(Mutex::new(ListenerMap::new())),
-        }
+        ListenerSet { listeners: Arc::new(Mutex::new(ListenerMap::new())) }
     }
-    
+
     pub fn subscribe<Listener: Fn(T) + Send + 'static>(&self, listener: Listener) -> Subscription {
         let mut acquired_listeners = self.listeners.lock().unwrap();
 
@@ -40,7 +41,7 @@ impl<T> ListenerSet<T> where T: Send + Clone {
         // channel will be close here automatically
         acquired_listeners.remove(&sub);
     }
-    
+
     pub fn notify(&self, payload: &T) {
         let mut acquired_listeners = self.listeners.lock().unwrap();
 
@@ -91,15 +92,15 @@ impl<T> ListenerSet<T> where T: Send + Clone {
 //         ls.subscribe(tx);
 //         assert_eq!(ls.len(), 1);
 //     }
-    
+
 //     #[test]
-//     fn test_add_listener_to_set() {        
+//     fn test_add_listener_to_set() {
 //         let (tx, rx) = mpsc::channel();
 //         let ls = ListenerSet::<bool>::new();
 
 //         ls.subscribe(tx);
 //         assert_eq!(ls.len(), 1);
-        
+
 //         ls.notify(&true);
 //         assert_eq!(rx.recv().is_ok(), true);
 //     }
@@ -112,7 +113,7 @@ impl<T> ListenerSet<T> where T: Send + Clone {
 //         let sub = ls.subscribe(tx);
 //         ls.unsubscribe(sub);
 //         assert_eq!(ls.len(), 0);
-        
+
 //         ls.notify(&true);
 //         assert_eq!(rx.recv().is_err(), true);
 //     }
@@ -127,8 +128,8 @@ impl<T> ListenerSet<T> where T: Send + Clone {
 //             assert_eq!(ls.len(), 1);
 //         }
 
-//         assert_eq!(ls.len(), 1);
-        
+// assert_eq!(ls.len(), 1);
+
 //         ls.notify(&true);
 //         assert_eq!(ls.len(), 0);
 //     }

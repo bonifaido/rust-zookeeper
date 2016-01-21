@@ -20,12 +20,13 @@ fn path_children_cache_test() {
     // Connect to the test cluster
     let zk = Arc::new(ZooKeeper::connect(&cluster.connect_string,
                                          Duration::from_secs(30),
-                                         |event: &WatchedEvent| info!("{:?}", event)).unwrap());
+                                         |event: &WatchedEvent| info!("{:?}", event))
+                          .unwrap());
 
     zk.ensure_path("/cache").unwrap();
-    zk.create("/cache/a", vec![1,4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
-    zk.create("/cache/b", vec![2,4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
-    zk.create("/cache/c", vec![3,4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
+    zk.create("/cache/a", vec![1, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
+    zk.create("/cache/b", vec![2, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
+    zk.create("/cache/c", vec![3, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
 
     let path_children_cache = Arc::new(PathChildrenCache::new(zk, "/cache").unwrap());
 

@@ -14,24 +14,27 @@ use std::process::{Child, Command, Stdio};
 pub struct ZkCluster {
     process: Child,
     connect_string: String,
-    closed: bool
+    closed: bool,
 }
 
 impl ZkCluster {
-
     fn start(instances: usize) -> ZkCluster {
         let mut process = match Command::new("java")
-                .arg("-jar")
-                .arg("zk-test-cluster/target/main.jar")
-                .arg(instances.to_string())
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn() {
+                                    .arg("-jar")
+                                    .arg("zk-test-cluster/target/main.jar")
+                                    .arg(instances.to_string())
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .spawn() {
             Ok(p) => p,
             Err(e) => panic!("failed to start ZkCluster: {}", e),
         };
         let connect_string = Self::read_connect_string(&mut process);
-        ZkCluster{process: process, connect_string: connect_string, closed: false}
+        ZkCluster {
+            process: process,
+            connect_string: connect_string,
+            closed: false,
+        }
     }
 
     fn read_connect_string(process: &mut Child) -> String {

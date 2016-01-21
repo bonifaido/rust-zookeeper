@@ -27,7 +27,7 @@ pub enum CreateMode {
     Persistent,
     Ephemeral,
     PersistentSequential,
-    EphemeralSequential
+    EphemeralSequential,
 }
 
 enum_from_primitive! {
@@ -65,7 +65,7 @@ pub enum ZkState {
     Connected,
     ConnectedReadOnly,
     Connecting,
-    NotConnected
+    NotConnected,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,5 +80,5 @@ pub enum OpCode {
     GetData = 4,
     SetData = 5,
     Ping = 11,
-    CloseSession = -11
+    CloseSession = -11,
 }

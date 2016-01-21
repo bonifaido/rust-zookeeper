@@ -12,7 +12,7 @@ use std::env;
 use std::sync::mpsc;
 use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::acls;
-use zookeeper::recipes::cache::{PathChildrenCache};
+use zookeeper::recipes::cache::PathChildrenCache;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -33,16 +33,19 @@ fn zk_server_urls() -> String {
 fn zk_example() {
     let zk_urls = zk_server_urls();
     println!("connecting to {}", zk_urls);
-    
+
     let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(5), LoggingWatcher).unwrap();
 
     let mut tmp = String::new();
 
-    let auth = zk.add_auth("digest", vec![1,2,3,4]);
+    let auth = zk.add_auth("digest", vec![1, 2, 3, 4]);
 
     println!("authenticated -> {:?}", auth);
 
-    let path = zk.create("/test", vec![1,2], acls::OPEN_ACL_UNSAFE.clone(), CreateMode::Ephemeral);
+    let path = zk.create("/test",
+                         vec![1, 2],
+                         acls::OPEN_ACL_UNSAFE.clone(),
+                         CreateMode::Ephemeral);
 
     println!("created -> {:?}", path);
 
@@ -66,7 +69,7 @@ fn zk_example() {
 
     println!("children of / -> {:?}", children);
 
-    let set_data = zk.set_data("/test", vec![6,5,4,3], -1);
+    let set_data = zk.set_data("/test", vec![6, 5, 4, 3], -1);
 
     println!("set_data -> {:?}", set_data);
 
@@ -81,28 +84,28 @@ fn zk_example() {
     let watch_children = zk.get_children_w("/", |event: &WatchedEvent| {
         println!("watched event {:?}", event);
     });
-    
+
     println!("watch children -> {:?}", watch_children);
 
     let zk_arc = Arc::new(zk);
-    
+
     let mut pcc = PathChildrenCache::new(zk_arc.clone(), "/").unwrap();
     match pcc.start() {
         Err(err) => {
             println!("error starting cache: {:?}", err);
             return;
-        },
+        }
         _ => {
             println!("cache started");
         }
     }
 
     let (ev_tx, ev_rx) = mpsc::channel();
-    pcc.add_listener(move |e| ev_tx.send(e).unwrap() );
+    pcc.add_listener(move |e| ev_tx.send(e).unwrap());
     thread::spawn(move || {
         for ev in ev_rx {
             println!("received event {:?}", ev);
-        };
+        }
     });
 
     println!("press enter to close client");
@@ -116,7 +119,7 @@ fn zk_example() {
         // And operations return error after closed
         match zk_arc_captured.exists("/test", false) {
             Err(err) => println!("Usage after closed should end up with error: {:?}", err),
-            Ok(_) => panic!("Shouldn't happen")
+            Ok(_) => panic!("Shouldn't happen"),
         }
     });
 
