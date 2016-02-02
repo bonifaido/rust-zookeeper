@@ -20,7 +20,7 @@ fn path_children_cache_test() {
     // Connect to the test cluster
     let zk = Arc::new(ZooKeeper::connect(&cluster.connect_string,
                                          Duration::from_secs(30),
-                                         |event: &WatchedEvent| info!("{:?}", event))
+                                         |event: WatchedEvent| info!("{:?}", event))
                           .unwrap());
 
     zk.ensure_path("/cache").unwrap();

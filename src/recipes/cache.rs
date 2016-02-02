@@ -59,7 +59,7 @@ impl PathChildrenCache {
                     -> ZkResult<()> {
         let ops_chan1 = ops_chan.clone();
 
-        let watcher = move |event: &WatchedEvent| {
+        let watcher = move |event: WatchedEvent| {
             match event.event_type {
                 WatchedEventType::NodeChildrenChanged => {
                     let _path = event.path.as_ref().expect("Path absent");
@@ -110,7 +110,7 @@ impl PathChildrenCache {
                 -> ZkResult<Vec<u8>> {
         let path1 = path.to_owned();
 
-        let data_watcher = move |event: &WatchedEvent| {
+        let data_watcher = move |event: WatchedEvent| {
             let mut data_locked = data.lock().unwrap();
             match event.event_type {
                 WatchedEventType::NodeDeleted => {

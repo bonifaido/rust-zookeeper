@@ -15,16 +15,16 @@ pub enum WatchType {
 pub struct Watch {
     pub path: String,
     pub watch_type: WatchType,
-    pub watcher: Box<Fn(&WatchedEvent) + Send>,
+    pub watcher: Box<Watcher>,
 }
 
 pub trait Watcher: Send {
-    fn handle(&self, &WatchedEvent);
+    fn handle(&self, WatchedEvent);
 }
 
-impl<F> Watcher for F where F: Fn(&WatchedEvent) + Send
+impl<F> Watcher for F where F: Fn(WatchedEvent) + Send
 {
-    fn handle(&self, event: &WatchedEvent) {
+    fn handle(&self, event: WatchedEvent) {
         self(event)
     }
 }
@@ -110,10 +110,10 @@ impl<W: Watcher> ZkWatchHandler<W> {
         debug!("{:?}", event);
         if let Some(watches) = self.find_watches(&event) {
             for watch in watches.into_iter() {
-                (*(watch.watcher))(event)
+                watch.watcher.handle(event.clone())
             }
         } else {
-            self.watcher.handle(event)
+            self.watcher.handle(event.clone())
         }
     }
 

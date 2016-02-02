@@ -227,7 +227,7 @@ impl ZooKeeper {
         }
     }
 
-    pub fn exists_w<W: Fn(&WatchedEvent) + Send + 'static>(&self,
+    pub fn exists_w<W: Watcher + 'static>(&self,
                                                                path: &str,
                                                                watcher: W)
                                                                -> ZkResult<Stat> {
@@ -258,7 +258,7 @@ impl ZooKeeper {
         Ok(response.acl_stat)
     }
 
-    pub fn get_children_w<W: Fn(&WatchedEvent) + Send + 'static>(&self,
+    pub fn get_children_w<W: Watcher + 'static>(&self,
                                                                      path: &str,
                                                                      watcher: W)
                                                                      -> ZkResult<Vec<String>> {
@@ -306,7 +306,7 @@ impl ZooKeeper {
         Ok(response.data_stat)
     }
 
-    pub fn get_data_w<W: Fn(&WatchedEvent) + Send + 'static>(&self,
+    pub fn get_data_w<W: Watcher + 'static>(&self,
                                                                  path: &str,
                                                                  watcher: W)
                                                                  -> ZkResult<(Vec<u8>, Stat)> {

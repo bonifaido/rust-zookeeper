@@ -16,7 +16,7 @@ use zookeeper::recipes::cache::PathChildrenCache;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
-    fn handle(&self, e: &WatchedEvent) {
+    fn handle(&self, e: WatchedEvent) {
         info!("{:?}", e)
     }
 }
@@ -81,7 +81,7 @@ fn zk_example() {
 
     // println!("deleted /test -> {:?}", delete);
 
-    let watch_children = zk.get_children_w("/", |event: &WatchedEvent| {
+    let watch_children = zk.get_children_w("/", |event: WatchedEvent| {
         println!("watched event {:?}", event);
     });
 

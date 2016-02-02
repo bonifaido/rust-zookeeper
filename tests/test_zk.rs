@@ -24,7 +24,7 @@ fn zk_test() {
     // Connect to the test cluster
     let zk = ZooKeeper::connect(&cluster.connect_string,
                                 Duration::from_secs(5),
-                                move |event: &WatchedEvent| {
+                                move |event: WatchedEvent| {
                                     info!("{:?}", event);
                                     if event.keeper_state == KeeperState::Disconnected {
                                         disconnects_watcher.fetch_add(1, Ordering::Relaxed);
@@ -60,7 +60,7 @@ fn zk_test() {
     let children = zk.get_children("/", true);
     assert!(children.is_ok());
 
-    let children = zk.get_children_w("/", |event: &WatchedEvent| println!("Custom {:?}", event));
+    let children = zk.get_children_w("/", |event: WatchedEvent| println!("Custom {:?}", event));
     assert!(children.is_ok());
     let delete = zk.delete("/test", -1);
     assert!(delete.is_ok());
