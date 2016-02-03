@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["zk", "zookeeper", "distributed", "coordination"]
 
 [dependencies]
-byteorder = "0.3"
+byteorder = "0.4"
 bytes = "0.3"
 enum_primitive = "0.1"
 lazy_static = "0.1"
