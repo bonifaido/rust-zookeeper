@@ -9,12 +9,11 @@ use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, RingBuf};
 use mio::{EventLoop, EventSet, Handler, PollOpt, Sender, Timeout, Token, TryRead, TryWrite};
 use mio::tcp::TcpStream;
-use time::PreciseTime;
 use std::collections::VecDeque;
 use std::io;
 use std::io::Cursor;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const ZK: Token = Token(1);
 
@@ -59,7 +58,7 @@ struct ZkHandler {
     watch_sender: Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
-    ping_sent: PreciseTime,
+    ping_sent: Instant,
     state_listeners: ListenerSet<ZkState>,
 }
 
@@ -82,7 +81,7 @@ impl ZkHandler {
             watch_sender: watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
             zxid: 0,
-            ping_sent: PreciseTime::now(),
+            ping_sent: Instant::now(),
             state_listeners: state_listeners,
         }
     }
@@ -157,7 +156,7 @@ impl ZkHandler {
                 }
                 -2 => {
                     trace!("Got ping response in {:?}",
-                           self.ping_sent.to(PreciseTime::now()));
+                           self.ping_sent.elapsed());
                     self.inflight.pop_front();
                 }
                 _ => {
@@ -381,7 +380,7 @@ impl Handler for ZkHandler {
                 watch: None,
             };
             event_loop.channel().send(ping).unwrap();
-            self.ping_sent = PreciseTime::now();
+            self.ping_sent = Instant::now();
         } else {
             self.reconnect(event_loop);
         }
