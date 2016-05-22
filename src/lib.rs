@@ -9,7 +9,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate mio;
-extern crate time;
 extern crate snowflake;
 
 pub use consts::*;
