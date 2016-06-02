@@ -9,7 +9,11 @@ pub trait ZooKeeperExt {
 
 impl ZooKeeperExt for ZooKeeper {
     fn ensure_path(&self, path: &str) -> ZkResult<()> {
-        for (i, _) in path.chars().chain(once('/')).enumerate().skip(1).filter(|c| c.1 == '/') {
+        for (i, _) in path.chars()
+                          .chain(once('/'))
+                          .enumerate()
+                          .skip(1)
+                          .filter(|c| c.1 == '/') {
             match self.create(&path[..i],
                               vec![],
                               OPEN_ACL_UNSAFE.clone(),
