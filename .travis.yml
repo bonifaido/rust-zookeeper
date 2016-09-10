@@ -1,5 +1,5 @@
 language: rust
-rust: nightly
+rust: stable
 env:
   global:
     - secure: qQK6lhqsdiOzasWVHr1x9FI5n6LD8tUpa+r3z55JAz5Ay6trx6YwZthwzknOMa1XzhC9+XxYJ/mT2I317aIigcCnsIZasfhTwEXT2z+CNAkxwJsXoUSJ2ceVfhpHT2PMziK45afu9YI5+PmjA9mqWj3CftWTYR84zw1nrJtyEAM=
@@ -11,8 +11,8 @@ script:
   - cd zk-test-cluster && mvn clean package && cd -
   - travis-cargo test
 after_success:
-  - travis-cargo --only nightly doc
-  - travis-cargo --only nightly doc-upload
+  - travis-cargo doc
+  - travis-cargo doc-upload
   - travis-cargo coveralls
 # sudo: false
 # as per http://blog.travis-ci.com/2014-12-17-faster-builds-with-container-based-infrastructure/
