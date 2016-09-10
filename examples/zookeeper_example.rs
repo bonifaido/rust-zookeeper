@@ -34,7 +34,9 @@ fn zk_example() {
     let zk_urls = zk_server_urls();
     println!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(5), LoggingWatcher).unwrap();
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher).unwrap();
+
+    zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
 
     let mut tmp = String::new();
 

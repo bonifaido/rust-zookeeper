@@ -232,12 +232,23 @@ impl ZkHandler {
         self.state = ZkState::Connecting;
         self.notify_state(old_state, self.state);
 
+        info!("Establishing Zk connection");
+
         // TODO only until session times out
         loop {
             self.buffer.clear();
             self.inflight.clear();
             self.response.mark();
             self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
+
+            // Check if the session is still alive according to our knowledge
+            if self.ping_sent.elapsed().as_secs() * 1000 > self.timeout_ms {
+                warn!("Zk session timeout, closing io event loop");
+                self.state = ZkState::Closed;
+                self.notify_state(ZkState::Connecting, self.state);
+                event_loop.shutdown();
+                break;
+            }
 
             self.clear_ping_timeout(event_loop);
 
@@ -247,11 +258,11 @@ impl ZkHandler {
                 self.sock = match TcpStream::connect(host) {
                     Ok(sock) => sock,
                     Err(e) => {
-                        warn!("Failed to connect {:?}: {:?}", host, e);
+                        error!("Failed to connect {:?}: {:?}", host, e);
                         continue;
                     }
                 };
-                info!("Connected to {:?}", host);
+                info!("Started connecting to {:?}", host);
             }
 
             let request = self.connect_request();
