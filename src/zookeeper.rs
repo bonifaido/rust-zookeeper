@@ -5,7 +5,6 @@ use listeners::{ListenerSet, Subscription};
 use mio;
 use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
-use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -228,9 +227,9 @@ impl ZooKeeper {
     }
 
     pub fn exists_w<W: Watcher + 'static>(&self,
-                                                               path: &str,
-                                                               watcher: W)
-                                                               -> ZkResult<Stat> {
+                                            path: &str,
+                                            watcher: W)
+                                            -> ZkResult<Stat> {
         let req = ExistsRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -259,9 +258,9 @@ impl ZooKeeper {
     }
 
     pub fn get_children_w<W: Watcher + 'static>(&self,
-                                                                     path: &str,
-                                                                     watcher: W)
-                                                                     -> ZkResult<Vec<String>> {
+                                                path: &str,
+                                                watcher: W)
+                                                -> ZkResult<Vec<String>> {
         let req = GetChildrenRequest {
             path: try!(self.path(path)),
             watch: true,
