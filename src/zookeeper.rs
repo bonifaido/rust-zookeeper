@@ -5,9 +5,11 @@ use listeners::{ListenerSet, Subscription};
 use mio;
 use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
+use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::{Mutex};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::time::Duration;
 use std::thread;
@@ -21,6 +23,12 @@ pub struct RawRequest {
     pub watch: Option<Watch>,
 }
 
+impl fmt::Debug for RawRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "RawRequest {{ opcode: {:?} }}", self.opcode)
+    }
+}
+
 pub struct RawResponse {
     pub header: ReplyHeader,
     pub data: ByteBuf,
@@ -29,7 +37,7 @@ pub struct RawResponse {
 pub struct ZooKeeper {
     chroot: Option<String>,
     xid: AtomicIsize,
-    io: mio::Sender<RawRequest>,
+    io: Mutex<mio::channel::Sender<RawRequest>>,
     listeners: ListenerSet<ZkState>,
 }
 
@@ -51,19 +59,20 @@ impl ZooKeeper {
 
         debug!("Initiating connection to {}", connect_string);
 
-        let watch = ZkWatch::new(watcher, chroot.clone());
+        let (watch_sender, watch_receiver) = mio::channel::channel();
+        let mut watch = ZkWatch::new(watcher, watch_receiver, chroot.clone());
         let listeners = ListenerSet::<ZkState>::new();
         let listeners1 = listeners.clone();
-        let io = ZkIo::new(addrs.clone(), timeout, watch.sender(), listeners1);
-        let sender = io.sender();
+        let (io_sender, io_receiver) = mio::channel::channel();
+        let io = ZkIo::new(addrs.clone(), timeout, io_receiver, watch_sender, listeners1);
 
         try!(Self::zk_thread("event", move || watch.run().unwrap()));
-        try!(Self::zk_thread("io", move || io.run().unwrap()));
+        try!(Self::zk_thread("io", move || io.run()));
 
         Ok(ZooKeeper {
             chroot: chroot,
             xid: AtomicIsize::new(1),
-            io: sender,
+            io: Mutex::new(io_sender),
             listeners: listeners,
         })
     }
@@ -120,10 +129,16 @@ impl ZooKeeper {
             watch: watch,
         };
 
-        try!(self.io.send(request).map_err(|err| {
-            warn!("error sending request: {:?}", err);
-            ZkError::ConnectionLoss
-        }));
+        {
+            let io = try!(self.io.lock().map_err(|err| {
+                warn!("error locking ZkIo: {:?}", err);
+                ZkError::ConnectionLoss
+            }));
+            try!(io.send(request).map_err(|err| {
+                warn!("error sending request: {:?}", err);
+                ZkError::ConnectionLoss
+            }));
+        }
 
         let mut response = try!(resp_rx.recv().map_err(|err| {
             warn!("error receiving response: {:?}", err);
