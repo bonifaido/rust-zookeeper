@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::fmt;
+
 enum_from_primitive! {
     #[derive(Debug)]
     pub enum ZkError {
@@ -22,6 +25,39 @@ enum_from_primitive! {
         Unimplemented = -6
     }
 }
+
+impl fmt::Display for ZkError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Zookeeper Error: {}", self.description())
+    }
+}
+
+impl Error for ZkError {
+    fn description(&self) -> &str {
+        match *self {
+            ZkError::APIError => "APIError",
+            ZkError::AuthFailed => "AuthFailed",
+            ZkError::BadArguments => "BadArguments",
+            ZkError::BadVersion => "BadVersion",
+            ZkError::ConnectionLoss => "ConnectionLoss",
+            ZkError::DataInconsistency => "DataInconsistency",
+            ZkError::InvalidACL => "InvalidACL",
+            ZkError::InvalidCallback => "InvalidCallback",
+            ZkError::MarshallingError => "MarshallingError",
+            ZkError::NoAuth => "NoAuth",
+            ZkError::NoChildrenForEphemerals => "NoChildrenForEphemerals",
+            ZkError::NodeExists => "NodeExists",
+            ZkError::NoNode => "NoNode",
+            ZkError::NotEmpty => "NotEmpty",
+            ZkError::OperationTimeout => "OperationTimeout",
+            ZkError::RuntimeInconsistency => "RuntimeInconsistency",
+            ZkError::SessionExpired => "SessionExpired",
+            ZkError::SystemError => "SystemError",
+            ZkError::Unimplemented => "Unimplemented",
+        }
+    }
+}
+
 
 pub enum CreateMode {
     Persistent,
