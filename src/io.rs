@@ -6,8 +6,7 @@ use zookeeper::{RawResponse, RawRequest};
 use listeners::ListenerSet;
 
 use byteorder::{BigEndian, ByteOrder};
-use bytes::Buf;
-use bytes::buf::{RingBuf, ReadExt, WriteExt};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use mio::{Events, Poll, Ready, PollOpt, Token};
 use mio::channel::{Receiver, Sender};
 use mio::tcp::TcpStream;
@@ -20,6 +19,8 @@ use std::time::{Duration, Instant};
 const ZK: Token = Token(1);
 const TIMER: Token = Token(2);
 const CHANNEL: Token = Token(3);
+
+use mio_util::*;
 
 lazy_static! {
     static ref PING: ByteBuf =
@@ -56,7 +57,12 @@ struct ZkHandler {
     hosts: Hosts,
     buffer: VecDeque<RawRequest>,
     inflight: VecDeque<RawRequest>,
-    response: RingBuf,
+    response: BytesMut,
+    /// Capacity range -- (minimum, maximum).
+    response_capacity: (usize, usize),
+    /// When receiving a message that does not fit in a single `response` buffer, this is the number
+    /// of remaining bytes needed to complete the message.
+    response_remaining_sz: Option<usize>,
     timeout: Option<Timeout>,
     timeout_ms: u64,
     io_receiver: Receiver<RawRequest>,
@@ -84,8 +90,9 @@ impl ZkHandler {
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
             inflight: VecDeque::new(),
-            // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
-            response: RingBuf::with_capacity(1024 * 1024 * 2),
+            response: BytesMut::with_capacity(1024 * 1024 * 2),
+            response_capacity: (4096, 1024 * 1024 * 2),
+            response_remaining_sz: None,
             timeout: None,
             timeout_ms: timeout_ms,
             io_receiver: io_receiver,
@@ -139,36 +146,66 @@ impl ZkHandler {
         }
     }
 
-    fn handle_response(&mut self) {
-        loop {
-            if self.response.remaining() <= 4 {
-                return;
-            }
-            let len = BigEndian::read_i32(&self.response.bytes()[..4]) as usize;
+    /// Handles a chunk of data read from the network buffer. It operates on `self.response` and
+    /// will always advance the cursor by `read_bytes`. If the number of `read_bytes` completes a
+    /// response, `handle_response` will be invoked with the complete request.
+    fn handle_chunk(&mut self, mut read_bytes: usize) {
+        trace!("Handling response chunk read_bytes={}", read_bytes);
 
-            trace!("Response chunk len = {} buf len is {}",
-                   len,
-                   self.response.bytes().len());
+        while read_bytes > 0 {
+            let goal_response_sz = match self.response_remaining_sz {
+                Some(sz) => sz,
+                None => {
+                    // TODO: This can happen in theory, but transferring less than WORD size does
+                    // not happen in modern kernels -- it is likely to only happen if the cursor
+                    // ends up at the end of `self.response`.
+                    assert!(read_bytes > 4);
 
-            if self.response.remaining() - 4 < len {
-                return;
-            } else {
-                self.response.advance(4);
-                {
-                    self.handle_chunk(len);
+                    // First piece of a response message -- get the goal size from the first 4 bytes
+                    unsafe {
+                        let sz = BigEndian::read_i32(&self.response.bytes_mut()[..4]) as usize;
+                        self.response.advance_mut(4);
+                        read_bytes -= 4;
+                        if sz > self.response.capacity() {
+                            trace!("increasing response buffer size to goal_response_sz={}", sz);
+                            unsafe { self.response.reserve(sz) };
+                        }
+                        sz
+                    }
                 }
-                self.response.advance(len);
+            };
+
+            if goal_response_sz <= read_bytes {
+                self.response_remaining_sz = None;
+                let data_buf = unsafe {
+                    self.response.advance_mut(goal_response_sz);
+                    read_bytes -= goal_response_sz;
+                    let msg = self.response.take().freeze();
+
+                    let (sz_min, sz_max) = self.response_capacity;
+                    if self.response.capacity() < sz_min {
+                        trace!("rotating to new response buffer");
+                        self.response = BytesMut::with_capacity(sz_max);
+                    }
+                    msg
+                };
+                self.handle_response(data_buf);
+            } else {
+                let remaining_bytes = goal_response_sz - read_bytes;
+                trace!("waiting on remaining_bytes={}", remaining_bytes);
+                self.response_remaining_sz = Some(remaining_bytes);
+
+                unsafe { self.response.advance_mut(read_bytes) };
+                read_bytes = 0;
             }
         }
     }
 
-    fn handle_chunk(&mut self, len: usize) {
+    /// Handles a response defined by the complete contents of `data_buf`.
+    fn handle_response(&mut self, data_buf: Bytes) {
+        let mut data = Cursor::new(&data_buf[4..]);
 
-        let mut data = Cursor::new(&self.response.bytes()[..len]);
-
-        trace!("handle_response in {:?} state [{}]",
-               self.state,
-               data.bytes().len());
+        trace!("handle_response in {:?} state [{}]", self.state, data.bytes().len());
 
         if self.state != ZkState::Connecting {
             let header = match ReplyHeader::read_from(&mut data) {
@@ -323,8 +360,9 @@ impl ZkHandler {
         trace!("ready {:?} {:?}", token, events);
         if events.is_writable() {
             while let Some(mut request) = self.buffer.pop_front() {
-                match self.sock.write_buf(&mut request.data) {
-                    Ok(written) if written > 0 => {
+                match self.sock.try_write(&request.data.bytes()) {
+                    Ok(Some(written)) if written > 0 => {
+                        request.data.advance(written);
                         trace!("Written {:?} bytes", written);
                         if request.data.has_remaining() {
                             self.buffer.push_front(request);
@@ -336,7 +374,8 @@ impl ZkHandler {
                             self.clear_ping_timeout();
                         }
                     }
-                    Ok(_) => warn!("Connection closed: write"),
+                    Ok(Some(_)) => warn!("Connection closed: write"),
+                    Ok(None) => trace!("Spurious write"),
                     Err(e) => {
                         error!("Failed to write socket: {:?}", e);
                         self.reconnect();
@@ -346,12 +385,17 @@ impl ZkHandler {
             self.timeout = Some(self.timer.set_timeout(Duration::from_millis(self.timeout_ms), ()).unwrap());
         }
         if events.is_readable() {
-            match self.sock.read_buf(&mut self.response) {
-                Ok(read) if read > 0 => {
+            match self.sock.try_read(unsafe { self.response.bytes_mut() }) {
+                Ok(Some(read)) if read > 0 => {
                     trace!("Read {:?} bytes", read);
-                    self.handle_response();
+                    self.handle_chunk(read);
                 }
-                Ok(_) => warn!("Connection closed: read"),
+                Ok(Some(0)) => {
+                    warn!("Connection closed: read");
+                    self.reconnect();
+                },
+                Ok(Some(_)) => unreachable!(), // try_read transforms these into errors
+                Ok(None) => trace!("Spurious read"), // EINTR
                 Err(e) => {
                     error!("Failed to read socket: {:?}", e);
                     self.reconnect();

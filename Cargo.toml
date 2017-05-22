@@ -11,15 +11,14 @@ readme = "README.md"
 keywords = ["zk", "zookeeper", "distributed", "coordination"]
 
 [dependencies]
-byteorder = "0.5"
+byteorder = "1.0"
 enum_primitive = "0.1"
 lazy_static = "0.2"
 log = "0.3"
 mio = "0.6"
 num = "0.1"
 snowflake = "1.2"
-[dependencies.bytes]
-git = "https://github.com/carllerche/bytes"
+bytes = "0.4"
 
 [dev-dependencies]
 env_logger = "0.3"

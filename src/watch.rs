@@ -62,8 +62,8 @@ impl<W: Watcher> ZkWatch<W> {
         self.poll.register(&self.receiver, CHANNEL, Ready::readable(), PollOpt::edge()).unwrap();
         loop {
             self.poll.poll(&mut events, None).unwrap();
-            match self.receiver.try_recv().unwrap() {
-                WatchMessage::Event(response) => {
+            match self.receiver.try_recv() {
+                Ok(WatchMessage::Event(response)) => {
                     info!("Event thread got response {:?}", response.header);
                     let mut data = response.data;
                     match response.header.err {
@@ -79,9 +79,10 @@ impl<W: Watcher> ZkWatch<W> {
                         e => error!("WatchedEvent.error {:?}", e),
                     }
                 }
-                WatchMessage::Watch(watch) => {
+                Ok(WatchMessage::Watch(watch)) => {
                     self.watches.entry(watch.path.clone()).or_insert(vec![]).push(watch);
                 }
+                Err(e) => error!("Received error in watch: {:?}", e)
             }
         }
     }

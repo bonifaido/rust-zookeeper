@@ -53,9 +53,12 @@ fn zk_test() {
     let data = vec![7; 1024 * 1000];
     let set_data = zk.set_data("/test", data.clone(), -1);
     assert!(set_data.is_ok());
-    let get_data = zk.get_data("/test", false);
-    assert!(get_data.is_ok());
-    assert_eq!(get_data.unwrap().0, data);
+    let get_response = zk.get_data("/test", false);
+    assert!(get_response.is_ok());
+    let (get_data, get_stat) = get_response.unwrap();
+    assert_eq!(data.len(), get_data.len());
+    assert_eq!(data.len(), get_stat.data_length as usize);
+    assert_eq!(data, get_data);
 
     let children = zk.get_children("/", true);
     assert!(children.is_ok());
