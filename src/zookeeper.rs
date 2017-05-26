@@ -3,8 +3,8 @@ use proto::*;
 use io::ZkIo;
 use listeners::{ListenerSet, Subscription};
 use mio;
-use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
+use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -135,7 +135,7 @@ impl ZooKeeper {
                 Ok(try!(ReadFrom::read_from(&mut response.data)
                             .map_err(|_| ZkError::MarshallingError)))
             }
-            e => Err(FromPrimitive::from_i32(e).unwrap()),
+            e => Err(ZkError::from(e))
         }
     }
 

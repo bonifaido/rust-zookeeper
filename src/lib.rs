@@ -2,14 +2,13 @@
 extern crate byteorder;
 extern crate bytes;
 #[macro_use]
-extern crate enum_primitive;
-extern crate num;
-#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate mio;
 extern crate snowflake;
+#[macro_use]
+extern crate zookeeper_derive;
 
 pub use consts::*;
 pub use proto::{Acl, Stat, WatchedEvent};

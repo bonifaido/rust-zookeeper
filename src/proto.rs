@@ -1,7 +1,23 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use consts::{KeeperState, OpCode, WatchedEventType};
-use num::FromPrimitive;
+use consts::{KeeperState, WatchedEventType};
+use std::convert::From;
 use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
+
+/// Operation code for messages. See `RequestHeader`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OpCode {
+    Auth = 100,
+    Create = 1,
+    Delete = 2,
+    Exists = 3,
+    GetAcl = 6,
+    SetAcl = 7,
+    GetChildren = 8,
+    GetData = 4,
+    SetData = 5,
+    Ping = 11,
+    CloseSession = -11,
+}
 
 pub type ByteBuf = Cursor<Vec<u8>>;
 
@@ -455,9 +471,8 @@ impl ReadFrom for WatchedEvent {
         let type_raw = try!(reader.read_i32::<BigEndian>());
         let state_raw = try!(reader.read_i32::<BigEndian>());
         let path = try!(reader.read_string());
-        let event_type = try!(FromPrimitive::from_i32(type_raw)
-                                  .ok_or(error("FromPrimitive failed")));
-        let state = try!(FromPrimitive::from_i32(state_raw).ok_or(error("FromPrimitive failed")));
+        let event_type = WatchedEventType::from(type_raw);
+        let state = KeeperState::from(state_raw);
         Ok(WatchedEvent {
             event_type: event_type,
             keeper_state: state,
