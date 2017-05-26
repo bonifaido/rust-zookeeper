@@ -4,6 +4,7 @@ use consts::{KeeperState, WatchedEventType};
 use data::Stat;
 use std::convert::From;
 use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
+use watch::WatchedEvent;
 
 /// Operation code for messages. See `RequestHeader`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -437,13 +438,6 @@ impl ReadFrom for EmptyResponse {
     fn read_from<R: Read>(_: &mut R) -> Result<EmptyResponse> {
         Ok(EmptyResponse)
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct WatchedEvent {
-    pub event_type: WatchedEventType,
-    pub keeper_state: KeeperState,
-    pub path: Option<String>,
 }
 
 impl ReadFrom for WatchedEvent {

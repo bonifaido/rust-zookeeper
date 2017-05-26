@@ -13,10 +13,9 @@ extern crate zookeeper_derive;
 pub use acl::*;
 pub use consts::*;
 pub use data::*;
-pub use proto::WatchedEvent;
 pub use zookeeper::{ZkResult, ZooKeeper};
 pub use zookeeper_ext::ZooKeeperExt;
-pub use watch::Watcher;
+pub use watch::{Watch, WatchedEvent, Watcher, WatchType};
 
 mod acl;
 mod consts;
