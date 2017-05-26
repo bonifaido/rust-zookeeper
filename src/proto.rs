@@ -1,6 +1,7 @@
 use acl::{Acl, Permission};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use consts::{KeeperState, WatchedEventType};
+use data::Stat;
 use std::convert::From;
 use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
 
@@ -135,21 +136,6 @@ impl WriteTo for Acl {
         self.scheme.write_to(writer)?;
         self.id.write_to(writer)
     }
-}
-
-#[derive(Debug)]
-pub struct Stat {
-    pub czxid: i64,
-    pub mzxid: i64,
-    pub ctime: i64,
-    pub mtime: i64,
-    pub version: i32,
-    pub cversion: i32,
-    pub aversion: i32,
-    pub ephemeral_owner: i64,
-    pub data_length: i32,
-    pub num_children: i32,
-    pub pzxid: i64,
 }
 
 impl ReadFrom for Stat {

@@ -1,5 +1,6 @@
 use acl::*;
 use consts::*;
+use data::*;
 use proto::*;
 use io::ZkIo;
 use listeners::{ListenerSet, Subscription};
