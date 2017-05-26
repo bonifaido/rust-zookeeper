@@ -1,0 +1,13 @@
+[package]
+name = "zookeeper_derive"
+version = "0.2.2"
+authors = ["Travis Gockel <travis@gockelhut.com>"]
+license = "MIT"
+description = "Derive implementations used to build the ZooKeeper library"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "~0.3.15"
+syn = "~0.11.11"
