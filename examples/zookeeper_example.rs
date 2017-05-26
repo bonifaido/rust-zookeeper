@@ -62,7 +62,7 @@ fn zk_example() {
 
     println!("get_acl -> {:?}", get_acl);
 
-    let set_acl = zk.set_acl("/test", Acl::open_unsafe().clone(), -1);
+    let set_acl = zk.set_acl("/test", Acl::open_unsafe().clone(), None);
 
     println!("set_acl -> {:?}", set_acl);
 
@@ -70,7 +70,7 @@ fn zk_example() {
 
     println!("children of / -> {:?}", children);
 
-    let set_data = zk.set_data("/test", vec![6, 5, 4, 3], -1);
+    let set_data = zk.set_data("/test", vec![6, 5, 4, 3], None);
 
     println!("set_data -> {:?}", set_data);
 

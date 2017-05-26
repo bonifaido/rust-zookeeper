@@ -50,7 +50,7 @@ fn zk_test() {
 
     // Set/Get Big-Data(tm)
     let data = vec![7; 1024 * 1000];
-    let set_data = zk.set_data("/test", data.clone(), -1);
+    let set_data = zk.set_data("/test", data.clone(), None);
     assert!(set_data.is_ok());
     let get_data = zk.get_data("/test", false);
     assert!(get_data.is_ok());
@@ -61,7 +61,7 @@ fn zk_test() {
 
     let children = zk.get_children_w("/", |event: WatchedEvent| println!("Custom {:?}", event));
     assert!(children.is_ok());
-    let delete = zk.delete("/test", -1);
+    let delete = zk.delete("/test", None);
     assert!(delete.is_ok());
 
 

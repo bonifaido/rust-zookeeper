@@ -71,8 +71,11 @@ pub enum CreateMode {
     Persistent = 0,
     /// The znode will be deleted upon the client's disconnect.
     Ephemeral = 1,
-    /// The znode will not be automatically deleted upon client's disconnect, and its name will be
-    /// appended with a monotonically increasing number.
+    /// The name of the znode will be appended with a monotonically increasing number. The actual
+    /// path name of a sequential node will be the given path plus a suffix `"i"` where *i* is the
+    /// current sequential number of the node. The sequence number is always fixed length of 10
+    /// digits, 0 padded. Once such a node is created, the sequential number will be incremented by
+    /// one.
     PersistentSequential = 2,
     /// The znode will be deleted upon the client's disconnect, and its name will be appended with a
     /// monotonically increasing number.
