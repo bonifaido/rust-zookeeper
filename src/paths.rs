@@ -1,8 +1,15 @@
+/// Combine two paths into a single path, possibly inserting a '/' between them.
 pub fn make_path(parent: &str, child: &str) -> String {
-    let mut result = parent.to_owned();
-    if parent.chars().last().unwrap() != '/' {
-        result.push('/');
+    if parent.chars().last() == Some('/') {
+        format!("{}{}", parent, child)
+    } else {
+        format!("{}/{}", parent, child)
     }
-    result.push_str(child);
-    result
+}
+
+#[cfg(test)]
+#[test]
+fn make_path_tests() {
+    assert_eq!("/a/b", make_path("/a", "b"));
+    assert_eq!("/a/b", make_path("/a/", "b"));
 }
