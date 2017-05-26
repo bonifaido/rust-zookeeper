@@ -1,5 +1,4 @@
-use zookeeper::{CreateMode, WatchedEvent, ZooKeeper};
-use zookeeper::acls;
+use zookeeper::{Acl, CreateMode, WatchedEvent, ZooKeeper};
 use zookeeper::KeeperState;
 
 use ZkCluster;
@@ -36,7 +35,7 @@ fn zk_test() {
     // Do the tests
     let create = zk.create("/test",
                            vec![8, 8],
-                           acls::OPEN_ACL_UNSAFE.clone(),
+                           Acl::open_unsafe().clone(),
                            CreateMode::Ephemeral);
     assert_eq!(create.ok(), Some("/test".to_owned()));
 

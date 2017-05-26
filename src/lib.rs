@@ -10,21 +10,20 @@ extern crate snowflake;
 #[macro_use]
 extern crate zookeeper_derive;
 
+pub use acl::*;
 pub use consts::*;
-pub use proto::{Acl, Stat, WatchedEvent};
-pub use zoodefs::acls;
-pub use zoodefs::perms;
+pub use proto::{Stat, WatchedEvent};
 pub use zookeeper::{ZkResult, ZooKeeper};
 pub use zookeeper_ext::ZooKeeperExt;
 pub use watch::Watcher;
 
+mod acl;
 mod consts;
 mod io;
 mod listeners;
-pub mod paths;
+mod paths;
 mod proto;
 mod watch;
-mod zoodefs;
 mod zookeeper;
 mod zookeeper_ext;
 pub mod recipes;

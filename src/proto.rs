@@ -1,3 +1,4 @@
+use acl::{Acl, Permission};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use consts::{KeeperState, WatchedEventType};
 use std::convert::From;
@@ -118,27 +119,20 @@ impl<T: WriteTo> WriteTo for Vec<T> {
     }
 }
 
-#[derive(Clone,Debug)]
-pub struct Acl {
-    pub perms: i32,
-    pub scheme: String,
-    pub id: String,
-}
-
 impl ReadFrom for Acl {
     fn read_from<R: Read>(read: &mut R) -> Result<Acl> {
         Ok(Acl {
-            perms: try!(read.read_i32::<BigEndian>()),
-            scheme: try!(read.read_string()),
-            id: try!(read.read_string()),
+            perms: Permission::from_raw(read.read_u32::<BigEndian>()?),
+            scheme: read.read_string()?,
+            id: read.read_string()?,
         })
     }
 }
 
 impl WriteTo for Acl {
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.perms));
-        try!(self.scheme.write_to(writer));
+        writer.write_u32::<BigEndian>(self.perms as u32)?;
+        self.scheme.write_to(writer)?;
         self.id.write_to(writer)
     }
 }

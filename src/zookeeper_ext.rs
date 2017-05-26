@@ -1,4 +1,4 @@
-use acls::*;
+use acl::*;
 use consts::{CreateMode, ZkError};
 use zookeeper::{ZkResult, ZooKeeper};
 use std::iter::once;
@@ -16,7 +16,7 @@ impl ZooKeeperExt for ZooKeeper {
                           .filter(|c| c.1 == '/') {
             match self.create(&path[..i],
                               vec![],
-                              OPEN_ACL_UNSAFE.clone(),
+                              Acl::open_unsafe().clone(),
                               CreateMode::Persistent) {
                 Ok(_) | Err(ZkError::NodeExists) => {}
                 Err(e) => return Err(e),
