@@ -1,6 +1,5 @@
 use zookeeper::CreateMode::*;
-use zookeeper::{WatchedEvent, ZooKeeper, ZooKeeperExt};
-use zookeeper::acls::*;
+use zookeeper::{Acl, WatchedEvent, ZooKeeper, ZooKeeperExt};
 use zookeeper::recipes::cache::PathChildrenCache;
 
 use ZkCluster;
@@ -24,9 +23,9 @@ fn path_children_cache_test() {
                           .unwrap());
 
     zk.ensure_path("/cache").unwrap();
-    zk.create("/cache/a", vec![1, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
-    zk.create("/cache/b", vec![2, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
-    zk.create("/cache/c", vec![3, 4], OPEN_ACL_UNSAFE.clone(), Ephemeral).unwrap();
+    zk.create("/cache/a", vec![1, 4], Acl::open_unsafe().clone(), Ephemeral).unwrap();
+    zk.create("/cache/b", vec![2, 4], Acl::open_unsafe().clone(), Ephemeral).unwrap();
+    zk.create("/cache/c", vec![3, 4], Acl::open_unsafe().clone(), Ephemeral).unwrap();
 
     let path_children_cache = Arc::new(PathChildrenCache::new(zk, "/cache").unwrap());
 

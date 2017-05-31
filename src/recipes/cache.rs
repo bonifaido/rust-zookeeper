@@ -1,20 +1,25 @@
+//! Caching mechanisms.
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::collections::HashMap;
 use consts::{WatchedEventType, ZkError, ZkState};
+use data::Stat;
 use paths::make_path;
-use proto::WatchedEvent;
+use watch::WatchedEvent;
 use zookeeper::{ZkResult, ZooKeeper};
 use zookeeper_ext::ZooKeeperExt;
 use listeners::{ListenerSet, Subscription};
 
-pub type ChildData = Arc<Vec<u8>>;
+/// Data contents of a znode and associated `Stat`.
+pub type ChildData = Arc<(Vec<u8>, Stat)>;
+
+/// Data for all known children of a znode.
 pub type Data = HashMap<String, ChildData>;
 
-#[derive(Debug,Clone)]
-pub enum PathChildrenCacheEvent {
+#[derive(Debug, Clone)]
+enum PathChildrenCacheEvent {
     Initialized(Data),
     ConnectionSuspended,
     ConnectionLost,
@@ -40,6 +45,18 @@ enum Operation {
     ZkStateEvent(ZkState),
 }
 
+/// A [Path Cache](http://curator.apache.org/curator-recipes/path-cache.html) is used to watch a
+/// znode.
+///
+/// A utility that attempts to keep all data from all children of a ZK path locally cached. This
+/// will watch the ZK path; whenever a child is added, updated or removed, the Path Cache will
+/// change its state to contain the current set of children, the children's data and the children's
+/// state. You can register a listener that will get notified when changes occur.
+///
+/// # Note
+/// It is not possible to stay transactionally in sync. Users of this class must be prepared for
+/// false-positives and false-negatives. Additionally, always use the version number when updating
+/// data to avoid overwriting another process's change.
 pub struct PathChildrenCache {
     path: Arc<String>,
     zk: Arc<ZooKeeper>,
@@ -51,6 +68,27 @@ pub struct PathChildrenCache {
 }
 
 impl PathChildrenCache {
+    /// Create a new cache instance watching `path`. If `path` does not exist, it will be created
+    /// (see `ZooKeeperExt::ensure_path`).
+    ///
+    /// # Note
+    /// After creating the instance, you *must* call `start`.
+    pub fn new(zk: Arc<ZooKeeper>, path: &str) -> ZkResult<PathChildrenCache> {
+        let data = Arc::new(Mutex::new(HashMap::new()));
+
+        try!(zk.ensure_path(path));
+
+        Ok(PathChildrenCache {
+            path: Arc::new(path.to_owned()),
+            zk: zk,
+            data: data,
+            worker_thread: None,
+            channel: None,
+            listener_subscription: None,
+            event_listeners: ListenerSet::new(),
+        })
+    }
+
     fn get_children(zk: Arc<ZooKeeper>,
                     path: &str,
                     data: Arc<Mutex<Data>>,
@@ -82,12 +120,10 @@ impl PathChildrenCache {
 
             if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
 
-                let child_data = try!(Self::get_data(zk.clone(),
-                                                     &child_path,
-                                                     data.clone(),
-                                                     ops_chan.clone()));
-
-                let child_data = Arc::new(child_data);
+                let child_data = Arc::new(Self::get_data(zk.clone(),
+                                                         &child_path,
+                                                         data.clone(),
+                                                         ops_chan.clone())?);
 
                 data_locked.insert(child_path.clone(), child_data.clone());
 
@@ -107,7 +143,7 @@ impl PathChildrenCache {
                 path: &str,
                 data: Arc<Mutex<Data>>,
                 ops_chan: Sender<Operation>)
-                -> ZkResult<Vec<u8>> {
+                -> ZkResult<(Vec<u8>, Stat)> {
         let path1 = path.to_owned();
 
         let data_watcher = move |event: WatchedEvent| {
@@ -132,7 +168,7 @@ impl PathChildrenCache {
             trace!("New data: {:?}", *data_locked);
         };
 
-        zk.get_data_w(path, data_watcher).map(|stuff| stuff.0)
+        zk.get_data_w(path, data_watcher)
     }
 
     fn update_data(zk: Arc<ZooKeeper>,
@@ -168,23 +204,8 @@ impl PathChildrenCache {
         }
     }
 
-    pub fn new(zk: Arc<ZooKeeper>, path: &str) -> ZkResult<PathChildrenCache> {
-
-        let data = Arc::new(Mutex::new(HashMap::new()));
-
-        try!(zk.ensure_path(path));
-
-        Ok(PathChildrenCache {
-            path: Arc::new(path.to_owned()),
-            zk: zk,
-            data: data,
-            worker_thread: None,
-            channel: None,
-            listener_subscription: None,
-            event_listeners: ListenerSet::new(),
-        })
-    }
-
+    /// Return the current data. There are no guarantees of accuracy. This is merely the most recent
+    /// view of the data.
     pub fn get_current_data(&self) -> Data {
         self.data.lock().unwrap().clone()
     }
@@ -272,6 +293,7 @@ impl PathChildrenCache {
         done
     }
 
+    /// Start the cache. The cache is not started automatically. You must call this method.
     pub fn start(&mut self) -> ZkResult<()> {
         let (ops_chan_tx, ops_chan_rx) = mpsc::channel();
         let ops_chan_rx_zk_events = ops_chan_tx.clone();
