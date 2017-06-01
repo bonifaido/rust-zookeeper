@@ -1,19 +1,23 @@
+use acl::*;
 use consts::*;
+use data::*;
 use proto::*;
 use io::ZkIo;
 use listeners::{ListenerSet, Subscription};
 use mio;
-use num::FromPrimitive;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::fmt;
+use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
+use std::string::ToString;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Mutex};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::time::Duration;
 use std::thread;
 
+/// Value returned from potentially-error operations.
 pub type ZkResult<T> = result::Result<T, ZkError>;
 
 pub struct RawRequest {
@@ -34,6 +38,7 @@ pub struct RawResponse {
     pub data: ByteBuf,
 }
 
+/// The client interface for interacting with a ZooKeeper cluster.
 pub struct ZooKeeper {
     chroot: Option<String>,
     xid: AtomicIsize,
@@ -51,6 +56,17 @@ impl ZooKeeper {
             .map_err(|_| ZkError::SystemError)
     }
 
+    /// Connect to a ZooKeeper cluster.
+    ///
+    /// - `connect_string`: comma separated host:port pairs, each corresponding to a zk server,
+    ///   e.g. `"127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002"` If the optional chroot suffix is
+    ///   used the example would look like: `"127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002/app/a"`
+    ///   where the client would be rooted at `"/app/a"` and all paths would be relative to this
+    ///   root -- ie getting/setting/etc...`"/foo/bar"` would result in operations being run on
+    ///   `"/app/a/foo/bar"` (from the server perspective).
+    /// - `timeout`: session timeout -- how long should a client go without receiving communication
+    ///   from a server before considering it connection loss?
+    /// - `watcher`: a watcher object to be notified of connection state changes.
     pub fn connect<W>(connect_string: &str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper>
         where W: Watcher + 'static
     {
@@ -150,7 +166,7 @@ impl ZooKeeper {
                 Ok(try!(ReadFrom::read_from(&mut response.data)
                             .map_err(|_| ZkError::MarshallingError)))
             }
-            e => Err(FromPrimitive::from_i32(e).unwrap()),
+            e => Err(ZkError::from(e))
         }
     }
 
@@ -187,10 +203,13 @@ impl ZooKeeper {
         }
     }
 
-    pub fn add_auth(&self, scheme: &str, auth: Vec<u8>) -> ZkResult<()> {
+    /// Add the specified `scheme`:`auth` information to this connection.
+    ///
+    /// See `Acl` for more information.
+    pub fn add_auth<S: ToString>(&self, scheme: S, auth: Vec<u8>) -> ZkResult<()> {
         let req = AuthRequest {
             typ: 0,
-            scheme: scheme.to_owned(),
+            scheme: scheme.to_string(),
             auth: auth,
         };
 
@@ -199,6 +218,29 @@ impl ZooKeeper {
         Ok(())
     }
 
+    /// Create a node with the given `path`. The node data will be the given `data`, and node ACL
+    /// will be the given `acl`. The `mode` argument specifies the behavior of the created node (see
+    /// `CreateMode` for more information).
+    ///
+    /// This operation, if successful, will trigger all the watches left on the node of the given
+    /// path by `exists` and `get_data` API calls, and the watches left on the parent node by
+    /// `get_children` API calls.
+    ///
+    /// # Errors
+    /// If a node with the same actual path already exists in the ZooKeeper, the result will have
+    /// `Err(ZkError::NodeExists)`. Note that since a different actual path is used for each
+    /// invocation of creating sequential node with the same path argument, the call should never
+    /// error in this manner.
+    ///
+    /// If the parent node does not exist in the ZooKeeper, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// An ephemeral node cannot have children. If the parent node of the given path is ephemeral,
+    /// `Err(ZkError::NoChildrenForEphemerals)` will be returned.
+    ///
+    /// If the `acl` is invalid or empty, `Err(ZkError::InvalidACL)` is returned.
+    ///
+    /// The maximum allowable size of the data array is 1 MiB (1,048,576 bytes). Arrays larger than
+    /// this will return `Err(ZkError::BadArguments)`.
     pub fn create(&self,
                   path: &str,
                   data: Vec<u8>,
@@ -206,7 +248,7 @@ impl ZooKeeper {
                   mode: CreateMode)
                   -> ZkResult<String> {
         let req = CreateRequest {
-            path: try!(self.path(path)),
+            path: self.path(path)?,
             data: data,
             acl: acl,
             flags: mode as i32,
@@ -217,10 +259,25 @@ impl ZooKeeper {
         Ok(self.cut_chroot(response.path))
     }
 
-    pub fn delete(&self, path: &str, version: i32) -> ZkResult<()> {
+    /// Delete the node with the given `path`. The call will succeed if such a node exists, and the
+    /// given `version` matches the node's version (if the given version is `None`, it matches any
+    /// node's versions).
+    ///
+    /// This operation, if successful, will trigger all the watches on the node of the given path
+    /// left by `exists` API calls, watches left by `get_data` API calls, and the watches on the
+    /// parent node left by `get_children` API calls.
+    ///
+    /// # Errors
+    /// If the nodes does not exist, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// If the given `version` does not match the node's version, `Err(ZkError::BadVersion)` will be
+    /// returned.
+    ///
+    /// If the node has children, `Err(ZkError::NotEmpty)` will be returned.
+    pub fn delete(&self, path: &str, version: Option<i32>) -> ZkResult<()> {
         let req = DeleteRequest {
             path: try!(self.path(path)),
-            version: version,
+            version: version.unwrap_or(-1),
         };
 
         let _: EmptyResponse = try!(self.request(OpCode::Delete, self.xid(), req, None));
@@ -228,6 +285,11 @@ impl ZooKeeper {
         Ok(())
     }
 
+    /// Return the `Stat` of the node of the given `path` or `None` if no such node exists.
+    ///
+    /// If the `watch` is `true` and the call is successful (no error is returned), a watch will be
+    /// left on the node with the given path. The watch will be triggered by a successful operation
+    /// that creates/delete the node or sets the data on the node.
     pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Option<Stat>> {
         let req = ExistsRequest {
             path: try!(self.path(path)),
@@ -241,10 +303,14 @@ impl ZooKeeper {
         }
     }
 
+    /// Return the `Stat` of the node of the given `path` or `None` if no such node exists.
+    ///
+    /// Similar to `exists`, but sets an explicit `Watcher` instead of relying on the client's base
+    /// `Watcher`.
     pub fn exists_w<W: Watcher + 'static>(&self,
-                                            path: &str,
-                                            watcher: W)
-                                            -> ZkResult<Stat> {
+                                          path: &str,
+                                          watcher: W)
+                                          -> ZkResult<Stat> {
         let req = ExistsRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -264,6 +330,10 @@ impl ZooKeeper {
         Ok(response.stat)
     }
 
+    /// Return the ACL and `Stat` of the node of the given path.
+    ///
+    /// # Errors
+    /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
         let req = GetAclRequest { path: try!(self.path(path)) };
 
@@ -272,6 +342,57 @@ impl ZooKeeper {
         Ok(response.acl_stat)
     }
 
+    /// Set the ACL for the node of the given path if such a node exists and the given version
+    /// matches the version of the node. Return the `Stat` of the node.
+    ///
+    /// # Errors
+    /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// If the given version does not match the node's version, `Err(ZkError::BadVersion)` will be
+    /// returned.
+    pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: Option<i32>) -> ZkResult<Stat> {
+        let req = SetAclRequest {
+            path: try!(self.path(path)),
+            acl: acl,
+            version: version.unwrap_or(-1),
+        };
+
+        let response: SetAclResponse = try!(self.request(OpCode::SetAcl, self.xid(), req, None));
+
+        Ok(response.stat)
+    }
+
+    /// Return the list of the children of the node of the given `path`. The returned values are not
+    /// prefixed with the provided `path`; i.e. if the database contains `/path/a` and `/path/b`,
+    /// the result of `get_children` for `"/path"` will be `["a", "b"]`.
+    ///
+    /// If the `watch` is `true` and the call is successful (no error is returned), a watch will be
+    /// left on the node with the given path. The watch will be triggered by a successful operation
+    /// that deletes the node of the given path or creates/delete a child under the node.
+    ///
+    /// The list of children returned is not sorted and no guarantee is provided as to its natural
+    /// or lexical order.
+    ///
+    /// # Errors
+    /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
+    pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
+        let req = GetChildrenRequest {
+            path: try!(self.path(path)),
+            watch: watch,
+        };
+
+        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren,
+                                                              self.xid(),
+                                                              req,
+                                                              None));
+
+        Ok(response.children)
+    }
+
+    /// Return the list of the children of the node of the given `path`.
+    ///
+    /// Similar to `get_children`, but sets an explicit `Watcher` instead of relying on the client's
+    /// base `Watcher`.
     pub fn get_children_w<W: Watcher + 'static>(&self,
                                                 path: &str,
                                                 watcher: W)
@@ -295,20 +416,14 @@ impl ZooKeeper {
         Ok(response.children)
     }
 
-    pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
-        let req = GetChildrenRequest {
-            path: try!(self.path(path)),
-            watch: watch,
-        };
-
-        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren,
-                                                              self.xid(),
-                                                              req,
-                                                              None));
-
-        Ok(response.children)
-    }
-
+    /// Return the data and the `Stat` of the node of the given path.
+    ///
+    /// If `watch` is `true` and the call is successful (no error is returned), a watch will be left
+    /// on the node with the given path. The watch will be triggered by a successful operation that
+    /// sets data on the node, or deletes the node.
+    ///
+    /// # Errors
+    /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest {
             path: try!(self.path(path)),
@@ -320,10 +435,14 @@ impl ZooKeeper {
         Ok(response.data_stat)
     }
 
+    /// Return the data and the `Stat` of the node of the given path.
+    ///
+    /// Similar to `get_data`, but sets an explicit `Watcher` instead of relying on the client's
+    /// base `Watcher`.
     pub fn get_data_w<W: Watcher + 'static>(&self,
-                                                                 path: &str,
-                                                                 watcher: W)
-                                                                 -> ZkResult<(Vec<u8>, Stat)> {
+                                            path: &str,
+                                            watcher: W)
+                                            -> ZkResult<(Vec<u8>, Stat)> {
         let req = GetDataRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -343,23 +462,26 @@ impl ZooKeeper {
         Ok(response.data_stat)
     }
 
-    pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: i32) -> ZkResult<Stat> {
-        let req = SetAclRequest {
-            path: try!(self.path(path)),
-            acl: acl,
-            version: version,
-        };
-
-        let response: SetAclResponse = try!(self.request(OpCode::SetAcl, self.xid(), req, None));
-
-        Ok(response.stat)
-    }
-
-    pub fn set_data(&self, path: &str, data: Vec<u8>, version: i32) -> ZkResult<Stat> {
+    /// Set the data for the node of the given `path` if such a node exists and the given version
+    /// matches the version of the node (if the given version is `None`, it matches any node's
+    /// versions). Return the `Stat` of the node.
+    ///
+    /// This operation, if successful, will trigger all the watches on the node of the given `path`
+    /// left by `get_data` calls.
+    ///
+    /// # Errors
+    /// If no node with the given `path` exists, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// If the given version does not match the node's version, `Err(ZkError::BadVersion)` will be
+    /// returned.
+    ///
+    /// The maximum allowable size of the `data` array is 1 MiB (1,048,576 bytes). Arrays larger
+    /// than this will return `Err(ZkError::BadArguments)`.
+    pub fn set_data(&self, path: &str, data: Vec<u8>, version: Option<i32>) -> ZkResult<Stat> {
         let req = SetDataRequest {
             path: try!(self.path(path)),
             data: data,
-            version: version,
+            version: version.unwrap_or(-1),
         };
 
         let response: SetDataResponse = try!(self.request(OpCode::SetData, self.xid(), req, None));
@@ -367,16 +489,22 @@ impl ZooKeeper {
         Ok(response.stat)
     }
 
+    /// Adds a state change `Listener`, which will be notified of changes to the client's `ZkState`.
+    /// A unique identifier is returned, which is used in `remove_listener` to un-subscribe.
     pub fn add_listener<Listener: Fn(ZkState) + Send + 'static>(&self,
                                                                 listener: Listener)
                                                                 -> Subscription {
         self.listeners.subscribe(listener)
     }
 
+    /// Removes a state change `Listener` and closes the channel.
     pub fn remove_listener(&self, sub: Subscription) {
         self.listeners.unsubscribe(sub);
     }
 
+    /// Close this client object. Once the client is closed, its session becomes invalid. All the
+    /// ephemeral nodes in the ZooKeeper server associated with the session will be removed. The
+    /// watches left on those nodes (and on their parents) will be triggered.
     pub fn close(&self) -> ZkResult<()> {
         let _: EmptyResponse = try!(self.request(OpCode::CloseSession, 0, EmptyRequest, None));
 
@@ -387,7 +515,7 @@ impl ZooKeeper {
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
         if let Err(err) = self.close() {
-            info!("error closing zookeeper connection in drop: {:?}", err);
+            error!("error closing zookeeper connection in drop: {:?}", err);
         }
     }
 }

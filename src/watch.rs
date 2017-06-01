@@ -1,5 +1,6 @@
+use consts::{KeeperState, WatchedEventType};
 use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
-use proto::{ReadFrom, WatchedEvent};
+use proto::ReadFrom;
 use zookeeper::RawResponse;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::channel::Receiver;
@@ -8,20 +9,44 @@ use std::io;
 
 const CHANNEL: Token = Token(3);
 
+/// Represents a change on the ZooKeeper that a `Watcher` is able to respond to.
+///
+/// The `WatchedEvent` includes exactly what happened, the current state of the ZooKeeper, and the
+/// path of the znode that was involved in the event.
+#[derive(Clone, Debug)]
+pub struct WatchedEvent {
+    /// The trigger that caused the watch to hit.
+    pub event_type: WatchedEventType,
+    /// The current state of ZooKeeper (and the client's connection to it).
+    pub keeper_state: KeeperState,
+    /// The path of the znode that was involved. This will be `None` for session-related triggers.
+    pub path: Option<String>,
+}
+
+/// Describes what a `Watch` is looking for.
 #[derive(PartialEq)]
 pub enum WatchType {
+    /// Watching for changes to children.
     Child,
+    /// Watching for changes to data.
     Data,
+    /// Watching for the creation of a node at the given path.
     Exist,
 }
 
+/// An object watching a path for certain changes.
 pub struct Watch {
+    /// The path to the znode this is watching.
     pub path: String,
+    /// The type of changes this watch is looking for.
     pub watch_type: WatchType,
+    /// The handler for this watch, to call when it is triggered.
     pub watcher: Box<Watcher>,
 }
 
+/// The interface for handling events when a `Watch` triggers.
 pub trait Watcher: Send {
+    /// Receive the triggered event.
     fn handle(&self, WatchedEvent);
 }
 

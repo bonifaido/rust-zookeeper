@@ -1,6 +1,6 @@
 [package]
 name = "zookeeper"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
 license = "MIT"
 homepage = "https://github.com/bonifaido/rust-zookeeper"
@@ -12,13 +12,12 @@ keywords = ["zk", "zookeeper", "distributed", "coordination"]
 
 [dependencies]
 byteorder = "1.0"
-enum_primitive = "0.1"
 lazy_static = "0.2"
 log = "0.3"
 mio = "0.6"
-num = "0.1"
 snowflake = "1.2"
 bytes = "0.4"
+zookeeper_derive = { path = "zookeeper-derive" }
 
 [dev-dependencies]
 env_logger = "0.3"

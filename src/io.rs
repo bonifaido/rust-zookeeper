@@ -1,5 +1,5 @@
-use consts::{OpCode, ZkError, ZkState};
-use proto::{ByteBuf, ConnectRequest, ConnectResponse, ReadFrom, ReplyHeader, RequestHeader,
+use consts::{ZkError, ZkState};
+use proto::{ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader,
             WriteTo};
 use watch::WatchMessage;
 use zookeeper::{RawResponse, RawRequest};

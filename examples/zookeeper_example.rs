@@ -10,8 +10,7 @@ use std::time::Duration;
 use std::thread;
 use std::env;
 use std::sync::mpsc;
-use zookeeper::{CreateMode, Watcher, WatchedEvent, ZooKeeper};
-use zookeeper::acls;
+use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::recipes::cache::PathChildrenCache;
 
 struct LoggingWatcher;
@@ -46,7 +45,7 @@ fn zk_example() {
 
     let path = zk.create("/test",
                          vec![1, 2],
-                         acls::OPEN_ACL_UNSAFE.clone(),
+                         Acl::open_unsafe().clone(),
                          CreateMode::Ephemeral);
 
     println!("created -> {:?}", path);
@@ -63,7 +62,7 @@ fn zk_example() {
 
     println!("get_acl -> {:?}", get_acl);
 
-    let set_acl = zk.set_acl("/test", acls::OPEN_ACL_UNSAFE.clone(), -1);
+    let set_acl = zk.set_acl("/test", Acl::open_unsafe().clone(), None);
 
     println!("set_acl -> {:?}", set_acl);
 
@@ -71,7 +70,7 @@ fn zk_example() {
 
     println!("children of / -> {:?}", children);
 
-    let set_data = zk.set_data("/test", vec![6, 5, 4, 3], -1);
+    let set_data = zk.set_data("/test", vec![6, 5, 4, 3], None);
 
     println!("set_data -> {:?}", set_data);
 
