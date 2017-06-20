@@ -17,6 +17,8 @@ pub use zookeeper::{ZkResult, ZooKeeper};
 pub use zookeeper_ext::ZooKeeperExt;
 pub use watch::{Watch, WatchedEvent, Watcher, WatchType};
 
+pub use listeners::Subscription;
+
 mod acl;
 mod consts;
 mod data;
