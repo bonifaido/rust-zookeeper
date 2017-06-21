@@ -17,7 +17,7 @@ lazy_static = "0.1"
 log = "0.3"
 mio = "0.5"
 snowflake = "1.0.0"
-zookeeper_derive = { path = "zookeeper-derive", version = "*" }
+zookeeper_derive = { path = "zookeeper-derive", version = "0.3.0" }
 
 [dev-dependencies]
 env_logger = "0.3"
