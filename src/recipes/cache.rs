@@ -19,7 +19,7 @@ pub type ChildData = Arc<(Vec<u8>, Stat)>;
 pub type Data = HashMap<String, ChildData>;
 
 #[derive(Debug, Clone)]
-enum PathChildrenCacheEvent {
+pub enum PathChildrenCacheEvent {
     Initialized(Data),
     ConnectionSuspended,
     ConnectionLost,
