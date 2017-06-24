@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use snowflake::ProcessUniqueId;
 
+/// A unique identifier returned by `ZooKeeper::add_listener`.
+///
+/// It can be used to remove a listener with `ZooKeeper::remove_listener`.
 #[derive(Debug,Clone,Copy,Eq,PartialEq,Hash)]
 pub struct Subscription(ProcessUniqueId);
 
