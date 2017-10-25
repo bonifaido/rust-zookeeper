@@ -11,32 +11,32 @@ pub struct Permission(u32);
 
 impl Permission {
     /// No permissions are set (server could have been configured without ACL support).
-    pub const None: Permission = Permission(0b00000);
+    pub const NONE: Permission = Permission(0b00000);
 
     /// You can access the data of a node and can list its children.
-    pub const Read: Permission = Permission(0b00001);
+    pub const READ: Permission = Permission(0b00001);
 
     /// You can set the data of a node.
-    pub const Write: Permission = Permission(0b00010);
+    pub const WRITE: Permission = Permission(0b00010);
 
     /// You can create a child node.
-    pub const Create: Permission = Permission(0b00100);
+    pub const CREATE: Permission = Permission(0b00100);
 
     /// You can delete a child node (but not necessarily this one).
-    pub const Delete: Permission = Permission(0b01000);
+    pub const DELETE: Permission = Permission(0b01000);
 
     /// You can alter permissions on this node.
-    pub const Admin: Permission = Permission(0b10000);
+    pub const ADMIN: Permission = Permission(0b10000);
 
     /// You can do anything.
-    pub const All: Permission = Permission(0b11111);
+    pub const ALL: Permission = Permission(0b11111);
 
     /// Extract a permission value from raw `bits`.
-    pub fn from_raw(bits: u32) -> Permission {
+    pub(crate) fn from_raw(bits: u32) -> Permission {
         Permission(bits)
     }
 
-    pub fn code(&self) -> u32 {
+    pub(crate) fn code(&self) -> u32 {
         self.0
     }
 
@@ -45,8 +45,8 @@ impl Permission {
     /// ```
     /// use zookeeper::Permission;
     ///
-    /// (Permission::Read | Permission::Write).can(Permission::Write); // -> true
-    /// Permission::Admin.can(Permission::Create); // -> false
+    /// (Permission::READ | Permission::WRITE).can(Permission::WRITE); // -> true
+    /// Permission::ADMIN.can(Permission::CREATE); // -> false
     /// ```
     pub fn can(self, permissions: Permission) -> bool {
         (self & permissions) == permissions
@@ -72,10 +72,10 @@ impl ops::BitOr for Permission {
 
 impl fmt::Display for Permission {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if *self == Permission::All {
-            write!(f, "All")
-        } else if *self == Permission::None {
-            write!(f, "None")
+        if *self == Permission::ALL {
+            write!(f, "ALL")
+        } else if *self == Permission::NONE {
+            write!(f, "NONE")
         } else {
             let mut first = true;
             let mut tick = || {
@@ -87,11 +87,11 @@ impl fmt::Display for Permission {
                 }
             };
 
-            if self.can(Permission::Read)   { write!(f, "{}Read",   tick())?; }
-            if self.can(Permission::Write)  { write!(f, "{}Write",  tick())?; }
-            if self.can(Permission::Create) { write!(f, "{}Create", tick())?; }
-            if self.can(Permission::Delete) { write!(f, "{}Delete", tick())?; }
-            if self.can(Permission::Admin)  { write!(f, "{}Admin",  tick())?; }
+            if self.can(Permission::READ)   { write!(f, "{}READ", tick())?; }
+            if self.can(Permission::WRITE)  { write!(f, "{}WRITE", tick())?; }
+            if self.can(Permission::CREATE) { write!(f, "{}CREATE", tick())?; }
+            if self.can(Permission::DELETE) { write!(f, "{}DELETE", tick())?; }
+            if self.can(Permission::ADMIN)  { write!(f, "{}ADMIN", tick())?; }
             Ok(())
         }
     }
@@ -103,27 +103,27 @@ mod tests {
 
     #[test]
     fn permission_bitor() {
-        let all = Permission::Read
-                | Permission::Write
-                | Permission::Create
-                | Permission::Delete
-                | Permission::Admin;
-        assert_eq!(Permission::All, all);
+        let all = Permission::READ
+                | Permission::WRITE
+                | Permission::CREATE
+                | Permission::DELETE
+                | Permission::ADMIN;
+        assert_eq!(Permission::ALL, all);
     }
 
     #[test]
     fn permission_can() {
-        assert!(Permission::All.can(Permission::Write));
-        assert!(!Permission::Write.can(Permission::Read));
+        assert!(Permission::ALL.can(Permission::WRITE));
+        assert!(!Permission::WRITE.can(Permission::READ));
     }
 
     #[test]
     fn permission_format() {
-        assert_eq!("All", Permission::All.to_string());
-        assert_eq!("None", Permission::None.to_string());
-        assert_eq!("Read|Write", (Permission::Read | Permission::Write).to_string());
-        assert_eq!("Create|Delete", (Permission::Create | Permission::Delete).to_string());
-        assert_eq!("Admin", Permission::Admin.to_string());
+        assert_eq!("ALL", Permission::ALL.to_string());
+        assert_eq!("NONE", Permission::NONE.to_string());
+        assert_eq!("READ|WRITE", (Permission::READ | Permission::WRITE).to_string());
+        assert_eq!("CREATE|DELETE", (Permission::CREATE | Permission::DELETE).to_string());
+        assert_eq!("ADMIN", Permission::ADMIN.to_string());
     }
 }
 
@@ -177,9 +177,9 @@ impl Acl {
 }
 
 lazy_static! {
-    static ref ACL_CREATOR_ALL: Vec<Acl> = vec![Acl::new(Permission::All, "auth", "")];
-    static ref ACL_OPEN_UNSAFE: Vec<Acl> = vec![Acl::new(Permission::All, "world", "anyone")];
-    static ref ACL_READ_UNSAFE: Vec<Acl> = vec![Acl::new(Permission::Read, "world", "anyone")];
+    static ref ACL_CREATOR_ALL: Vec<Acl> = vec![Acl::new(Permission::ALL, "auth", "")];
+    static ref ACL_OPEN_UNSAFE: Vec<Acl> = vec![Acl::new(Permission::ALL, "world", "anyone")];
+    static ref ACL_READ_UNSAFE: Vec<Acl> = vec![Acl::new(Permission::READ, "world", "anyone")];
 }
 
 impl fmt::Display for Acl {
