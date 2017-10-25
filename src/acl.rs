@@ -7,30 +7,37 @@ use std::string::ToString;
 ///
 /// Permissions can be mixed together like integers with `|` and `&`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(u32)]
-pub enum Permission {
-    /// No permissions are set (server could have been configured without ACL support).
-    None =   0b00000,
-    /// You can access the data of a node and can list its children.
-    Read =   0b00001,
-    /// You can set the data of a node.
-    Write =  0b00010,
-    /// You can create a child node.
-    Create = 0b00100,
-    /// You can delete a child node (but not necessarily this one).
-    Delete = 0b01000,
-    /// You can alter permissions on this node.
-    Admin =  0b10000,
-    /// You can do anything.
-    All =    0b11111,
-}
+pub struct Permission(u32);
 
 impl Permission {
+    /// No permissions are set (server could have been configured without ACL support).
+    pub const None: Permission = Permission(0b00000);
+
+    /// You can access the data of a node and can list its children.
+    pub const Read: Permission = Permission(0b00001);
+
+    /// You can set the data of a node.
+    pub const Write: Permission = Permission(0b00010);
+
+    /// You can create a child node.
+    pub const Create: Permission = Permission(0b00100);
+
+    /// You can delete a child node (but not necessarily this one).
+    pub const Delete: Permission = Permission(0b01000);
+
+    /// You can alter permissions on this node.
+    pub const Admin: Permission = Permission(0b10000);
+
+    /// You can do anything.
+    pub const All: Permission = Permission(0b11111);
+
     /// Extract a permission value from raw `bits`.
     pub fn from_raw(bits: u32) -> Permission {
-        use std::mem;
+        Permission(bits)
+    }
 
-        unsafe { mem::transmute(bits) }
+    pub fn code(&self) -> u32 {
+        self.0
     }
 
     /// Check that all `permissions` are set.
@@ -50,7 +57,7 @@ impl ops::BitAnd for Permission {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self {
-        Permission::from_raw((self as u32) & (rhs as u32))
+        Permission::from_raw(self.0 & rhs.0)
     }
 }
 
@@ -58,17 +65,10 @@ impl ops::BitOr for Permission {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self {
-        Permission::from_raw((self as u32) | (rhs as u32))
+        Permission::from_raw(self.0 | rhs.0)
     }
 }
 
-impl ops::Not for Permission {
-    type Output = Self;
-
-    fn not(self) -> Self {
-        Permission::from_raw(!(self as u32)) & Permission::All
-    }
-}
 
 impl fmt::Display for Permission {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
