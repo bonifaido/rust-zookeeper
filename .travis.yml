@@ -6,6 +6,8 @@ env:
 before_script:
   - pip install 'travis-cargo<0.2' --user
   - export PATH=$HOME/.local/bin:$PATH
+  - sudo apt-get update
+  - sudo apt-get install maven
 script:
   - travis-cargo build
   - cd zk-test-cluster && mvn clean package && cd -
