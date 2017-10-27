@@ -133,7 +133,7 @@ impl ReadFrom for Acl {
 
 impl WriteTo for Acl {
     fn write_to(&self, writer: &mut Write) -> Result<()> {
-        writer.write_u32::<BigEndian>(self.perms as u32)?;
+        writer.write_u32::<BigEndian>(self.perms.code())?;
         self.scheme.write_to(writer)?;
         self.id.write_to(writer)
     }
