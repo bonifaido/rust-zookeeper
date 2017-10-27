@@ -17,7 +17,7 @@ Put this in your Cargo.toml:
 
 ```ini
 [dependencies]
-zookeeper = "0.3"
+zookeeper = "0.4"
 ```
 
 And this in your crate root:
