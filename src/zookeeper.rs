@@ -295,7 +295,7 @@ impl ZooKeeper {
     pub fn exists_w<W: Watcher + 'static>(&self,
                                           path: &str,
                                           watcher: W)
-                                          -> ZkResult<Stat> {
+                                          -> ZkResult<Option<Stat>> {
         let req = ExistsRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -307,12 +307,14 @@ impl ZooKeeper {
             watcher: Box::new(watcher),
         };
 
-        let response: ExistsResponse = try!(self.request(OpCode::Exists,
-                                                         self.xid(),
-                                                         req,
-                                                         Some(watch)));
-
-        Ok(response.stat)
+        match self.request::<ExistsRequest, ExistsResponse>(OpCode::Exists,
+                                                            self.xid(),
+                                                            req,
+                                                            Some(watch)) {
+            Ok(response) => Ok(Some(response.stat)),
+            Err(ZkError::NoNode) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Return the ACL and `Stat` of the node of the given path.
