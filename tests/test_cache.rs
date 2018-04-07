@@ -11,7 +11,7 @@ use env_logger;
 
 #[test]
 fn path_children_cache_test() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     // Create a test cluster
     let cluster = ZkCluster::start(1);

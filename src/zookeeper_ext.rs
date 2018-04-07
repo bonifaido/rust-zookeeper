@@ -22,6 +22,7 @@ pub trait ZooKeeperExt {
 
 impl ZooKeeperExt for ZooKeeper {
     fn ensure_path(&self, path: &str) -> ZkResult<()> {
+        trace!("ensure_path {}", path);
         for (i, _) in path.chars()
                           .chain(once('/'))
                           .enumerate()
@@ -39,6 +40,7 @@ impl ZooKeeperExt for ZooKeeper {
     }
 
     fn get_children_recursive(&self, path: &str) -> ZkResult<Vec<String>> {
+        trace!("get_children_recursive {}", path);
         let mut queue: VecDeque<String> = VecDeque::new();
         let mut result = vec![path.to_string()];
         queue.push_front(path.to_string());
@@ -58,6 +60,7 @@ impl ZooKeeperExt for ZooKeeper {
     }
 
     fn delete_recursive(&self, path: &str) -> ZkResult<()> {
+        trace!("delete_recursive {}", path);
         let children = self.get_children_recursive(path)?;
         for child in children.iter().rev() {
             self.delete(child, None)?;

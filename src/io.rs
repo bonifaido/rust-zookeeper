@@ -7,15 +7,23 @@ use listeners::ListenerSet;
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, RingBuf};
-use mio::{EventLoop, EventSet, Handler, PollOpt, Sender, Timeout, Token, TryRead, TryWrite};
-use mio::tcp::TcpStream;
+use mio::net::TcpStream;
+use mio::*;
+use mio_extras::channel::{Sender, Receiver, channel};
+use mio_extras::timer::{Timer, Timeout};
 use std::collections::VecDeque;
 use std::io;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+use std::sync::mpsc;
+use std::mem;
 
 const ZK: Token = Token(1);
+const TIMER: Token = Token(2);
+const CHANNEL: Token = Token(3);
+
+use try_io::{TryRead, TryWrite};
 
 lazy_static! {
     static ref PING: ByteBuf =
@@ -25,6 +33,11 @@ lazy_static! {
 struct Hosts {
     addrs: Vec<SocketAddr>,
     index: usize,
+}
+
+#[inline]
+fn pollopt() -> PollOpt {
+    PollOpt::edge() | PollOpt::oneshot()
 }
 
 impl Hosts {
@@ -46,7 +59,7 @@ impl Hosts {
     }
 }
 
-struct ZkHandler {
+pub struct ZkIo {
     sock: TcpStream,
     state: ZkState,
     hosts: Hosts,
@@ -54,48 +67,67 @@ struct ZkHandler {
     inflight: VecDeque<RawRequest>,
     response: RingBuf,
     timeout: Option<Timeout>,
+    timer: Timer<()>,
     timeout_ms: u64,
-    watch_sender: Sender<WatchMessage>,
+    timeout_duration: Duration,
+    watch_sender: mpsc::Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
     ping_sent: Instant,
     state_listeners: ListenerSet<ZkState>,
+    poll: Poll,
+    shutdown: bool,
+    tx: Sender<RawRequest>,
+    rx: Receiver<RawRequest>,
 }
 
-impl ZkHandler {
-    fn new(addrs: Vec<SocketAddr>,
-           timeout_ms: u64,
-           watch_sender: Sender<WatchMessage>,
-           state_listeners: ListenerSet<ZkState>)
-           -> ZkHandler {
-        ZkHandler {
+impl ZkIo {
+    pub fn new(
+        addrs: Vec<SocketAddr>,
+        timeout_duration: Duration,
+        watch_sender: mpsc::Sender<WatchMessage>,
+        state_listeners: ListenerSet<ZkState>
+    ) -> ZkIo {
+        trace!("ZkIo::new");
+        let timeout_ms = timeout_duration.as_secs() * 1000 +
+            timeout_duration.subsec_nanos() as u64 / 1000000;
+        let (tx, rx) = channel();
+
+        let mut zkio = ZkIo {
             sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
             state: ZkState::NotConnected,
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
             inflight: VecDeque::new(),
-            // TODO server reads max up to 1MB, otherwise drops the connection, size should be 1MB + tcp rcvBufsize
+            // TODO server reads max up to 1MB, otherwise drops the connection,
+            // size should be 1MB + tcp rcvBufsize
             response: RingBuf::new(1024 * 1024 * 2),
             timeout: None,
+            timeout_duration: timeout_duration,
             timeout_ms: timeout_ms,
             watch_sender: watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
             zxid: 0,
             ping_sent: Instant::now(),
             state_listeners: state_listeners,
-        }
+            // TODO add error handling to this method in subsequent commit.
+            // There's already another unwrap which needs to be addressed.
+            poll: Poll::new().unwrap(),
+            shutdown: false,
+            timer: Timer::default(),
+            tx: tx,
+            rx: rx,
+        };
+
+        let request = zkio.connect_request();
+        zkio.buffer.push_back(request);
+        zkio
     }
 
-    fn register(&mut self, event_loop: &mut EventLoop<Self>, events: EventSet) {
-        event_loop.register(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
-                  .ok()
-                  .expect("Failed to register ZK handle");
-    }
-
-    fn reregister(&mut self, event_loop: &mut EventLoop<Self>, events: EventSet) {
-        event_loop.reregister(&self.sock, ZK, events, PollOpt::edge() | PollOpt::oneshot())
-                  .ok()
-                  .expect("Failed to reregister ZK handle");
+    fn reregister(&mut self, interest: Ready) {
+        self.poll
+            .reregister(&self.sock, ZK, interest, pollopt())
+            .expect("Failed to register ZK handle");
     }
 
     fn notify_state(&self, old_state: ZkState, new_state: ZkState) {
@@ -104,7 +136,7 @@ impl ZkHandler {
         }
     }
 
-    fn handle_response(&mut self, event_loop: &mut EventLoop<Self>) {
+    fn handle_response(&mut self) {
         loop {
             if self.response.remaining() <= 4 {
                 return;
@@ -119,16 +151,13 @@ impl ZkHandler {
                 return;
             } else {
                 self.response.advance(4);
-                {
-                    self.handle_chunk(event_loop, len);
-                }
+                self.handle_chunk(len);
                 self.response.advance(len);
             }
         }
     }
 
-    fn handle_chunk(&mut self, event_loop: &mut EventLoop<Self>, len: usize) {
-
+    fn handle_chunk(&mut self, len: usize) {
         let mut data = Cursor::new(&self.response.bytes()[..len]);
 
         trace!("handle_response in {:?} state [{}]",
@@ -166,7 +195,7 @@ impl ZkHandler {
                                 let old_state = self.state;
                                 self.state = ZkState::Closed;
                                 self.notify_state(old_state, self.state);
-                                event_loop.shutdown();
+                                self.shutdown = true;
                             }
                             self.send_response(request, response);
                         }
@@ -181,7 +210,7 @@ impl ZkHandler {
                 Ok(conn_resp) => conn_resp,
                 Err(e) => {
                     panic!("Failed to parse ConnectResponse {:?}", e);
-                    // self.reconnect(event_loop);
+                    // self.reconnect();
                     // return
                 }
             };
@@ -221,13 +250,32 @@ impl ZkHandler {
         }
     }
 
-    fn clear_ping_timeout(&mut self, event_loop: &mut EventLoop<Self>) {
-        if let Some(timeout) = self.timeout {
-            event_loop.clear_timeout(timeout);
+    fn clear_ping_timeout(&mut self) {
+        trace!("clear_ping_timeout");
+
+        if let Some(timeout) = mem::replace(&mut self.timeout, None) {
+            // Cancel existing timer
+            self.timer.cancel_timeout(&timeout);
         }
     }
 
-    fn reconnect(&mut self, event_loop: &mut EventLoop<Self>) {
+    fn start_ping_timeout(&mut self) {
+        trace!("start_ping_timeout");
+
+        if let Some(timeout) = mem::replace(&mut self.timeout, None) {
+            // Cancel existing timer
+            self.timer.cancel_timeout(&timeout);
+        }
+
+        let duration = self.timeout_duration.clone();
+        self.timeout = Some(self.timer.set_timeout(duration, ()));
+
+        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
+            .expect("Reregister CHANNEL");
+    }
+
+    fn reconnect(&mut self) {
+        trace!("reconnect");
         let old_state = self.state;
         self.state = ZkState::Connecting;
         self.notify_state(old_state, self.state);
@@ -246,15 +294,16 @@ impl ZkHandler {
                 warn!("Zk session timeout, closing io event loop");
                 self.state = ZkState::Closed;
                 self.notify_state(ZkState::Connecting, self.state);
-                event_loop.shutdown();
+                self.shutdown = true;
                 break;
             }
 
-            self.clear_ping_timeout(event_loop);
+            self.clear_ping_timeout();
 
             {
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
+                self.poll.deregister(&self.sock).unwrap();
                 self.sock = match TcpStream::connect(host) {
                     Ok(sock) => sock,
                     Err(e) => {
@@ -268,7 +317,11 @@ impl ZkHandler {
             let request = self.connect_request();
             self.buffer.push_back(request);
 
-            self.register(event_loop, EventSet::all());
+
+            // Register the new socket
+            let pollopt = PollOpt::edge() | PollOpt::oneshot();
+            self.poll.register(&self.sock, ZK, Ready::all(), pollopt)
+                .expect("Register ZK");
 
             break;
         }
@@ -284,19 +337,24 @@ impl ZkHandler {
             watch: None,
         }
     }
-}
 
-impl Handler for ZkHandler {
-    type Message = RawRequest;
-    type Timeout = ();
+    fn ready(&mut self, token: Token, ready: Ready) {
+        trace!("event token={:?} ready={:?}", token, ready);
 
-    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+        match token {
+            ZK => self.ready_zk(ready),
+            TIMER => self.ready_timer(ready),
+            CHANNEL => self.ready_channel(ready),
+            _ => unreachable!(),
+        }
+    }
 
-        trace!("ready {:?} {:?}", token, events);
-        if events.is_writable() {
+    fn ready_zk(&mut self, ready: Ready) {
+        if ready.is_writable() {
             while let Some(mut request) = self.buffer.pop_front() {
                 match self.sock.try_write_buf(&mut request.data) {
-                    Ok(Some(written)) if written > 0 => {
+                    Ok(Some(0)) => warn!("Connection closed: write"),
+                    Ok(Some(written)) => {
                         trace!("Written {:?} bytes", written);
                         if request.data.has_remaining() {
                             self.buffer.push_front(request);
@@ -305,34 +363,36 @@ impl Handler for ZkHandler {
                             self.inflight.push_back(request);
 
                             // Sent a full message, clear the ping timeout
-                            self.clear_ping_timeout(event_loop);
+                            self.clear_ping_timeout();
                         }
                     }
                     Ok(None) => trace!("Spurious write"),
-                    Ok(Some(_)) => warn!("Connection closed: write"),
                     Err(e) => {
                         error!("Failed to write socket: {:?}", e);
-                        self.reconnect(event_loop);
+                        self.reconnect();
                     }
                 }
             }
-            self.timeout = Some(event_loop.timeout_ms((), self.timeout_ms).unwrap());
+
+            self.start_ping_timeout();
         }
-        if events.is_readable() {
+
+        if ready.is_readable() {
             match self.sock.try_read_buf(&mut self.response) {
-                Ok(Some(read)) if read > 0 => {
+                Ok(Some(0)) => warn!("Connection closed: read"),
+                Ok(Some(read)) => {
                     trace!("Read {:?} bytes", read);
-                    self.handle_response(event_loop);
+                    self.handle_response();
                 }
                 Ok(None) => trace!("Spurious read"),
-                Ok(Some(_)) => warn!("Connection closed: read"),
                 Err(e) => {
                     error!("Failed to read socket: {:?}", e);
-                    self.reconnect(event_loop);
+                    self.reconnect();
                 }
             }
         }
-        if (events.is_hup()) && (self.state != ZkState::Closed) {
+
+        if (ready.is_hup()) && (self.state != ZkState::Closed) {
             // If we were connected
             // fn send_watched_event(keeper_state: KeeperState) {
             //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
@@ -346,84 +406,108 @@ impl Handler for ZkHandler {
             self.state = ZkState::NotConnected;
             self.notify_state(old_state, self.state);
 
-            self.reconnect(event_loop);
+            self.reconnect();
         }
 
         // Not sure that we need to write, but we always need to read, because of watches
         // If the output buffer has no content, we don't need to write again
-        let mut event_set = EventSet::all();
+        let mut interest = Ready::all();
         if self.buffer.is_empty() {
-            event_set.remove(EventSet::writable());
+            interest.remove(Ready::writable());
         }
 
         // This tick is done, subscribe to a forthcoming one
-        self.reregister(event_loop, event_set);
+        self.reregister(interest);
     }
 
-    fn notify(&mut self, event_loop: &mut EventLoop<Self>, request: Self::Message) {
-        trace!("notify {:?}", request.opcode);
-        if self.state != ZkState::Closed {
-            if self.buffer.is_empty() {
-                self.reregister(event_loop, EventSet::all());
+    fn ready_channel(&mut self, _: Ready) {
+        while let Ok(request) = self.rx.try_recv() {
+            trace!("ready_channel {:?}", request.opcode);
+
+            match self.state {
+                ZkState::Closed => {
+                    // If zk is unavailable, respond with a ConnectionLoss error.
+                    let header = ReplyHeader {
+                        xid: 0,
+                        zxid: 0,
+                        err: ZkError::ConnectionLoss as i32,
+                    };
+                    let response = RawResponse {
+                        header: header,
+                        data: ByteBuf::new(vec![]),
+                    };
+                    self.send_response(request, response);
+                },
+                _ => {
+                    // Otherwise, queue request for processing.
+                    if self.buffer.is_empty() {
+                        self.reregister(Ready::all());
+                    }
+                    self.buffer.push_back(request);
+                },
             }
-            self.buffer.push_back(request);
-        } else {
-            let header = ReplyHeader {
-                xid: 0,
-                zxid: 0,
-                err: ZkError::ConnectionLoss as i32,
-            };
-            let response = RawResponse {
-                header: header,
-                data: ByteBuf::new(vec![]),
-            };
-            self.send_response(request, response);
         }
+
+        self.poll.reregister(&self.rx, CHANNEL, Ready::readable(), pollopt())
+            .expect("Reregister CHANNEL");
     }
 
-    fn timeout(&mut self, event_loop: &mut EventLoop<Self>, _: Self::Timeout) {
+    fn ready_timer(&mut self, _: Ready) {
+        trace!("ready_timer");
+
+        // Need to call timer.poll() until it returns None
+        while let Some(()) = self.timer.poll() {
+            ()
+        }
+
+        self.timeout = None;
         if self.inflight.is_empty() {
+            // No inflight request indicates an idle connection. Send a ping.
             trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
-            let ping = RawRequest {
+            self.tx.send(RawRequest {
                 opcode: OpCode::Ping,
                 data: PING.clone(),
                 listener: None,
                 watch: None,
-            };
-            event_loop.channel().send(ping).unwrap();
+            }).unwrap();
             self.ping_sent = Instant::now();
         } else {
-            self.reconnect(event_loop);
-        }
-    }
-}
-
-pub struct ZkIo {
-    event_loop: EventLoop<ZkHandler>,
-    handler: ZkHandler,
-}
-
-impl ZkIo {
-    pub fn new(addrs: Vec<SocketAddr>,
-               timeout: Duration,
-               event_sender: Sender<WatchMessage>,
-               state_listeners: ListenerSet<ZkState>)
-               -> ZkIo {
-        let event_loop = EventLoop::new().unwrap();
-        let timeout_ms = timeout.as_secs() * 1000 + timeout.subsec_nanos() as u64 / 1000000;
-        let handler = ZkHandler::new(addrs, timeout_ms, event_sender, state_listeners);
-        ZkIo {
-            event_loop: event_loop,
-            handler: handler,
+            // A timeout firing when there's inflight requests indicates a
+            // potential disconnect.
+            self.reconnect();
         }
     }
 
     pub fn sender(&self) -> Sender<RawRequest> {
-        self.event_loop.channel()
+        self.tx.clone()
     }
 
     pub fn run(mut self) -> io::Result<()> {
-        self.handler.reconnect(&mut self.event_loop);
-        self.event_loop.run(&mut self.handler)
+        let mut events = Events::with_capacity(128);
+
+        // Register Initial Interest
+        self.poll.register(&self.sock, ZK, Ready::all(), pollopt())
+            .expect("Register ZK");
+        self.poll.register(&self.timer, TIMER, Ready::readable(), pollopt())
+            .expect("Register TIMER");
+        self.poll.register(&self.rx, CHANNEL, Ready::readable(), pollopt())
+            .expect("Register CHANNEL");
+
+        loop {
+            // Handle loop shutdown
+            if self.shutdown {
+                break;
+            }
+
+            // Wait for events
+            self.poll.poll(&mut events, None)?;
+
+            // Process events
+            for event in &events {
+                self.ready(event.token(), event.readiness());
+            }
+        }
+
+        Ok(())
     }
 }

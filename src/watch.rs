@@ -2,7 +2,7 @@ use consts::{KeeperState, WatchedEventType};
 use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
 use proto::ReadFrom;
 use zookeeper::RawResponse;
-use mio::{EventLoop, Handler, Sender};
+use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
 use std::io;
 
@@ -60,44 +60,40 @@ pub enum WatchMessage {
 }
 
 pub struct ZkWatch<W: Watcher> {
-    handler: ZkWatchHandler<W>,
-    event_loop: EventLoop<ZkWatchHandler<W>>,
+    watcher: W,
+    watches: HashMap<String, Vec<Watch>>,
+    chroot: Option<String>,
+    tx: Sender<WatchMessage>,
+    rx: Receiver<WatchMessage>,
 }
 
 impl<W: Watcher> ZkWatch<W> {
     pub fn new(watcher: W, chroot: Option<String>) -> Self {
-        let event_loop = EventLoop::new().unwrap();
-        let handler = ZkWatchHandler {
-            watcher: watcher,
-            watches: HashMap::new(),
-            chroot: chroot,
-        };
+        trace!("ZkWatch::new");
+        let (tx, rx) = mpsc::channel();
+
         ZkWatch {
-            event_loop: event_loop,
-            handler: handler,
+            watches: HashMap::new(),
+            watcher: watcher,
+            chroot: chroot,
+            tx,
+            rx
         }
     }
 
     pub fn sender(&self) -> Sender<WatchMessage> {
-        self.event_loop.channel()
+        self.tx.clone()
     }
 
     pub fn run(mut self) -> io::Result<()> {
-        self.event_loop.run(&mut self.handler)
+        while let Ok(msg) = self.rx.recv() {
+            self.process_message(msg);
+        }
+
+        Ok(())
     }
-}
 
-struct ZkWatchHandler<W: Watcher> {
-    watcher: W,
-    watches: HashMap<String, Vec<Watch>>,
-    chroot: Option<String>,
-}
-
-impl<W: Watcher> Handler for ZkWatchHandler<W> {
-    type Message = WatchMessage;
-    type Timeout = ();
-
-    fn notify(&mut self, _: &mut EventLoop<Self>, message: Self::Message) {
+    fn process_message(&mut self, message: WatchMessage) {
         match message {
             WatchMessage::Event(response) => {
                 info!("Event thread got response {:?}", response.header);
@@ -120,9 +116,7 @@ impl<W: Watcher> Handler for ZkWatchHandler<W> {
             }
         }
     }
-}
 
-impl<W: Watcher> ZkWatchHandler<W> {
     fn cut_chroot(&self, event: &mut WatchedEvent) {
         if let Some(ref chroot) = self.chroot {
             if event.path.is_some() {

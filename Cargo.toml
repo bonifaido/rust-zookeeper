@@ -14,13 +14,14 @@ keywords = ["zk", "zookeeper", "distributed", "coordination"]
 byteorder = "1.2"
 bytes = "0.3"
 lazy_static = "0.1"
-log = "0.3"
-mio = "0.5"
+log = "0.4"
+mio = "0.6"
+mio-extras = "2"
 snowflake = "1.0.0"
 zookeeper_derive = { path = "zookeeper-derive", version = "0.3.0" }
 
 [dev-dependencies]
-env_logger = "0.3"
+env_logger = "0.5"
 
 [features]
 unstable = []
