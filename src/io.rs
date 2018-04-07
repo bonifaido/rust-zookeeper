@@ -6,7 +6,7 @@ use zookeeper::{RawResponse, RawRequest};
 use listeners::ListenerSet;
 
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{Buf, RingBuf};
+use bytes::{Buf, BytesMut, Bytes, IntoBuf};
 use mio::net::TcpStream;
 use mio::*;
 use mio_extras::channel::{Sender, Receiver, channel};
@@ -65,7 +65,7 @@ pub struct ZkIo {
     hosts: Hosts,
     buffer: VecDeque<RawRequest>,
     inflight: VecDeque<RawRequest>,
-    response: RingBuf,
+    response: BytesMut,
     timeout: Option<Timeout>,
     timer: Timer<()>,
     timeout_ms: u64,
@@ -101,7 +101,7 @@ impl ZkIo {
             inflight: VecDeque::new(),
             // TODO server reads max up to 1MB, otherwise drops the connection,
             // size should be 1MB + tcp rcvBufsize
-            response: RingBuf::new(1024 * 1024 * 2),
+            response: BytesMut::with_capacity(1024 * 1024 * 2),
             timeout: None,
             timeout_duration: timeout_duration,
             timeout_ms: timeout_ms,
@@ -138,31 +138,31 @@ impl ZkIo {
 
     fn handle_response(&mut self) {
         loop {
-            if self.response.remaining() <= 4 {
+            if self.response.len() <= 4 {
                 return;
             }
-            let len = BigEndian::read_i32(&self.response.bytes()[..4]) as usize;
 
-            trace!("Response chunk len = {} buf len is {}",
-                   len,
-                   self.response.bytes().len());
+            let len = BigEndian::read_i32(&self.response[..4]) as usize;
 
-            if self.response.remaining() - 4 < len {
+            trace!("Response chunk len = {} buf len is {}", len, self.response.len());
+
+            if self.response.len() - 4 < len {
                 return;
             } else {
                 self.response.advance(4);
-                self.handle_chunk(len);
-                self.response.advance(len);
+                let bytes = self.response.split_to(len);
+                self.handle_chunk(bytes.freeze());
+
+                self.response.reserve(1024 * 1024 * 2);
             }
         }
     }
 
-    fn handle_chunk(&mut self, len: usize) {
-        let mut data = Cursor::new(&self.response.bytes()[..len]);
+    fn handle_chunk(&mut self, bytes: Bytes) {
+        let len = bytes.len();
+        trace!("handle_response in {:?} state [{}]", self.state, len);
 
-        trace!("handle_response in {:?} state [{}]",
-               self.state,
-               data.bytes().len());
+        let mut data = bytes.into_buf();
 
         if self.state != ZkState::Connecting {
             let header = match ReplyHeader::read_from(&mut data) {
@@ -286,8 +286,7 @@ impl ZkIo {
         loop {
             self.buffer.clear();
             self.inflight.clear();
-            self.response.mark();
-            self.response.reset(); // TODO drop all read bytes once RingBuf.clear() is merged
+            self.response.clear(); // TODO drop all read bytes once RingBuf.clear() is merged
 
             // Check if the session is still alive according to our knowledge
             if self.ping_sent.elapsed().as_secs() * 1000 > self.timeout_ms {

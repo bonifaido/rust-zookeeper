@@ -21,21 +21,21 @@
 //! TryRead and TryWrite traits from mio 0.5.1
 
 use std::io::{Read, Write, Result};
-use bytes::{Buf, MutBuf};
+use bytes::{Buf, BufMut};
 
 pub trait TryRead {
-    fn try_read_buf<B: MutBuf>(&mut self, buf: &mut B) -> Result<Option<usize>>
+    fn try_read_buf<B: BufMut>(&mut self, buf: &mut B) -> Result<Option<usize>>
         where Self : Sized
     {
-        // Reads the length of the slice supplied by buf.mut_bytes into the buffer
+        // Reads the length of the slice supplied by buf.bytes_mut into the buffer
         // This is not guaranteed to consume an entire datagram or segment.
         // If your protocol is msg based (instead of continuous stream) you should
         // ensure that your buffer is large enough to hold an entire segment (1532 bytes if not jumbo
         // frames)
-        let res = self.try_read(unsafe { buf.mut_bytes() });
+        let res = self.try_read(unsafe { buf.bytes_mut() });
 
         if let Ok(Some(cnt)) = res {
-            unsafe { buf.advance(cnt); }
+            unsafe { buf.advance_mut(cnt); }
         }
 
         res
