@@ -1,3 +1,4 @@
+#![allow(deprecated)] // XXX temporary to silence expected warnings
 #![deny(unused_mut)]
 extern crate byteorder;
 extern crate bytes;
@@ -6,6 +7,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate mio;
+extern crate mio_extras;
 extern crate snowflake;
 #[macro_use]
 extern crate zookeeper_derive;
@@ -29,4 +31,5 @@ mod proto;
 mod watch;
 mod zookeeper;
 mod zookeeper_ext;
+mod try_io;
 pub mod recipes;

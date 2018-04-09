@@ -12,7 +12,7 @@ use env_logger;
 
 #[test]
 fn zk_test() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     // Create a test cluster
     let mut cluster = ZkCluster::start(3);

@@ -129,6 +129,6 @@ fn zk_example() {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
     zk_example();
 }

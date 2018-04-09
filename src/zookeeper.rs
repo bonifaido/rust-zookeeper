@@ -4,7 +4,7 @@ use data::*;
 use proto::*;
 use io::ZkIo;
 use listeners::{ListenerSet, Subscription};
-use mio;
+use mio_extras::channel::Sender as MioSender;
 use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -12,6 +12,7 @@ use std::result;
 use std::string::ToString;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::Mutex;
 use std::time::Duration;
 use std::thread;
 
@@ -34,7 +35,7 @@ pub struct RawResponse {
 pub struct ZooKeeper {
     chroot: Option<String>,
     xid: AtomicIsize,
-    io: mio::Sender<RawRequest>,
+    io: Mutex<MioSender<RawRequest>>,
     listeners: ListenerSet<ZkState>,
 }
 
@@ -76,10 +77,12 @@ impl ZooKeeper {
         try!(Self::zk_thread("event", move || watch.run().unwrap()));
         try!(Self::zk_thread("io", move || io.run().unwrap()));
 
+        trace!("Returning a ZooKeeper");
+
         Ok(ZooKeeper {
             chroot: chroot,
             xid: AtomicIsize::new(1),
-            io: sender,
+            io: Mutex::new(sender),
             listeners: listeners,
         })
     }
@@ -122,6 +125,7 @@ impl ZooKeeper {
                                              req: Req,
                                              watch: Option<Watch>)
                                              -> ZkResult<Resp> {
+        trace!("request opcode={:?} xid={:?}", opcode, xid);
         let rh = RequestHeader {
             xid: xid,
             opcode: opcode,
@@ -136,10 +140,14 @@ impl ZooKeeper {
             watch: watch,
         };
 
-        try!(self.io.send(request).map_err(|err| {
-            warn!("error sending request: {:?}", err);
-            ZkError::ConnectionLoss
-        }));
+        self.io
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .send(request)
+            .map_err(|err| {
+                warn!("error sending request: {:?}", err);
+                ZkError::ConnectionLoss
+            })?;
 
         let mut response = try!(resp_rx.recv().map_err(|err| {
             warn!("error receiving response: {:?}", err);
@@ -192,6 +200,7 @@ impl ZooKeeper {
     ///
     /// See `Acl` for more information.
     pub fn add_auth<S: ToString>(&self, scheme: S, auth: Vec<u8>) -> ZkResult<()> {
+        trace!("ZooKeeper::add_auth");
         let req = AuthRequest {
             typ: 0,
             scheme: scheme.to_string(),
@@ -232,6 +241,7 @@ impl ZooKeeper {
                   acl: Vec<Acl>,
                   mode: CreateMode)
                   -> ZkResult<String> {
+        trace!("ZooKeeper::create");
         let req = CreateRequest {
             path: self.path(path)?,
             data: data,
@@ -260,6 +270,7 @@ impl ZooKeeper {
     ///
     /// If the node has children, `Err(ZkError::NotEmpty)` will be returned.
     pub fn delete(&self, path: &str, version: Option<i32>) -> ZkResult<()> {
+        trace!("ZooKeeper::delete");
         let req = DeleteRequest {
             path: try!(self.path(path)),
             version: version.unwrap_or(-1),
@@ -276,6 +287,7 @@ impl ZooKeeper {
     /// left on the node with the given path. The watch will be triggered by a successful operation
     /// that creates/delete the node or sets the data on the node.
     pub fn exists(&self, path: &str, watch: bool) -> ZkResult<Option<Stat>> {
+        trace!("ZooKeeper::exists");
         let req = ExistsRequest {
             path: try!(self.path(path)),
             watch: watch,
@@ -296,6 +308,7 @@ impl ZooKeeper {
                                           path: &str,
                                           watcher: W)
                                           -> ZkResult<Option<Stat>> {
+        trace!("ZooKeeper::exists_w");
         let req = ExistsRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -322,6 +335,7 @@ impl ZooKeeper {
     /// # Errors
     /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
+        trace!("ZooKeeper::get_acl");
         let req = GetAclRequest { path: try!(self.path(path)) };
 
         let response: GetAclResponse = try!(self.request(OpCode::GetAcl, self.xid(), req, None));
@@ -338,6 +352,7 @@ impl ZooKeeper {
     /// If the given version does not match the node's version, `Err(ZkError::BadVersion)` will be
     /// returned.
     pub fn set_acl(&self, path: &str, acl: Vec<Acl>, version: Option<i32>) -> ZkResult<Stat> {
+        trace!("ZooKeeper::set_acl");
         let req = SetAclRequest {
             path: try!(self.path(path)),
             acl: acl,
@@ -363,6 +378,7 @@ impl ZooKeeper {
     /// # Errors
     /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_children(&self, path: &str, watch: bool) -> ZkResult<Vec<String>> {
+        trace!("ZooKeeper::get_children");
         let req = GetChildrenRequest {
             path: try!(self.path(path)),
             watch: watch,
@@ -384,6 +400,7 @@ impl ZooKeeper {
                                                 path: &str,
                                                 watcher: W)
                                                 -> ZkResult<Vec<String>> {
+        trace!("ZooKeeper::get_children_w");
         let req = GetChildrenRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -412,6 +429,7 @@ impl ZooKeeper {
     /// # Errors
     /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_data(&self, path: &str, watch: bool) -> ZkResult<(Vec<u8>, Stat)> {
+        trace!("ZooKeeper::get_data");
         let req = GetDataRequest {
             path: try!(self.path(path)),
             watch: watch,
@@ -430,6 +448,7 @@ impl ZooKeeper {
                                             path: &str,
                                             watcher: W)
                                             -> ZkResult<(Vec<u8>, Stat)> {
+        trace!("ZooKeeper::get_data_w");
         let req = GetDataRequest {
             path: try!(self.path(path)),
             watch: true,
@@ -465,6 +484,7 @@ impl ZooKeeper {
     /// The maximum allowable size of the `data` array is 1 MiB (1,048,576 bytes). Arrays larger
     /// than this will return `Err(ZkError::BadArguments)`.
     pub fn set_data(&self, path: &str, data: Vec<u8>, version: Option<i32>) -> ZkResult<Stat> {
+        trace!("ZooKeeper::set_data");
         let req = SetDataRequest {
             path: try!(self.path(path)),
             data: data,
@@ -481,11 +501,13 @@ impl ZooKeeper {
     pub fn add_listener<Listener: Fn(ZkState) + Send + 'static>(&self,
                                                                 listener: Listener)
                                                                 -> Subscription {
+        trace!("ZooKeeper::add_listener");
         self.listeners.subscribe(listener)
     }
 
     /// Removes a state change `Listener` and closes the channel.
     pub fn remove_listener(&self, sub: Subscription) {
+        trace!("ZooKeeper::remove_listener");
         self.listeners.unsubscribe(sub);
     }
 
@@ -493,6 +515,7 @@ impl ZooKeeper {
     /// ephemeral nodes in the ZooKeeper server associated with the session will be removed. The
     /// watches left on those nodes (and on their parents) will be triggered.
     pub fn close(&self) -> ZkResult<()> {
+        trace!("ZooKeeper::close");
         let _: EmptyResponse = try!(self.request(OpCode::CloseSession, 0, EmptyRequest, None));
 
         Ok(())
@@ -510,12 +533,13 @@ impl Drop for ZooKeeper {
 #[cfg(test)]
 mod tests {
     use super::ZooKeeper;
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
     // TODO This is flaky on Travis, it works on my Linux box though.
     #[test]
     #[cfg(target_os = "macos")]
     fn parse_connect_string() {
+        use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+
         let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,::1:2181/mesos")
                                   .ok()
                                   .expect("Parse 1");
