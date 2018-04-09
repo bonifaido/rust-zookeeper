@@ -271,7 +271,7 @@ impl ZkIo {
         self.timeout = Some(self.timer.set_timeout(duration, ()));
 
         self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Reregister CHANNEL");
+            .expect("Reregister TIMER");
     }
 
     fn reconnect(&mut self) {
@@ -349,6 +349,8 @@ impl ZkIo {
     }
 
     fn ready_zk(&mut self, ready: Ready) {
+        self.clear_ping_timeout();
+
         if ready.is_writable() {
             while let Some(mut request) = self.buffer.pop_front() {
                 match self.sock.try_write_buf(&mut request.data) {
@@ -360,9 +362,6 @@ impl ZkIo {
                             break;
                         } else {
                             self.inflight.push_back(request);
-
-                            // Sent a full message, clear the ping timeout
-                            self.clear_ping_timeout();
                         }
                     }
                     Ok(None) => trace!("Spurious write"),
@@ -372,8 +371,6 @@ impl ZkIo {
                     }
                 }
             }
-
-            self.start_ping_timeout();
         }
 
         if ready.is_readable() {
@@ -389,6 +386,7 @@ impl ZkIo {
                     self.reconnect();
                 }
             }
+
         }
 
         if (ready.is_hup()) && (self.state != ZkState::Closed) {
@@ -405,7 +403,12 @@ impl ZkIo {
             self.state = ZkState::NotConnected;
             self.notify_state(old_state, self.state);
 
+            info!("Reconnect due to HUP");
             self.reconnect();
+        }
+
+        if self.is_idle() {
+            self.start_ping_timeout();
         }
 
         // Not sure that we need to write, but we always need to read, because of watches
@@ -417,6 +420,10 @@ impl ZkIo {
 
         // This tick is done, subscribe to a forthcoming one
         self.reregister(interest);
+    }
+
+    fn is_idle(&self) -> bool {
+        self.inflight.is_empty() && self.buffer.is_empty()
     }
 
     fn ready_channel(&mut self, _: Ready) {
@@ -452,28 +459,34 @@ impl ZkIo {
     }
 
     fn ready_timer(&mut self, _: Ready) {
-        trace!("ready_timer");
+        trace!("ready_timer; thread={:?}", ::std::thread::current().id());
 
-        // Need to call timer.poll() until it returns None
-        while let Some(()) = self.timer.poll() {
-            ()
-        }
+        loop {
+            match self.timer.poll() {
+                Some(_) => {
+                    self.clear_ping_timeout();
+                    if self.inflight.is_empty() {
+                        // No inflight request indicates an idle connection. Send a ping.
+                        trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
+                        self.tx.send(RawRequest {
+                            opcode: OpCode::Ping,
+                            data: PING.clone(),
+                            listener: None,
+                            watch: None,
+                        }).unwrap();
+                        self.ping_sent = Instant::now();
+                    }
+                },
+                None => {
+                    if self.timeout.is_some() {
+                        // Reregister on a spurious wakeup
+                        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
+                            .expect("Reregister TIMER");
+                    }
 
-        self.timeout = None;
-        if self.inflight.is_empty() {
-            // No inflight request indicates an idle connection. Send a ping.
-            trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
-            self.tx.send(RawRequest {
-                opcode: OpCode::Ping,
-                data: PING.clone(),
-                listener: None,
-                watch: None,
-            }).unwrap();
-            self.ping_sent = Instant::now();
-        } else {
-            // A timeout firing when there's inflight requests indicates a
-            // potential disconnect.
-            self.reconnect();
+                    break;
+                }
+            }
         }
     }
 
