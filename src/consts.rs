@@ -65,7 +65,7 @@ impl fmt::Display for ZkError {
 }
 
 /// CreateMode value determines how the znode is created on ZooKeeper.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CreateMode {
     /// The znode will not be automatically deleted upon client's disconnect.
     Persistent = 0,
