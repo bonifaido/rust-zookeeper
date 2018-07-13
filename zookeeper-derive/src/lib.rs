@@ -1,4 +1,4 @@
-#![crate_type="proc-macro"]
+#![crate_type = "proc-macro"]
 
 extern crate syn;
 #[macro_use]
@@ -11,8 +11,7 @@ use std::iter::Iterator;
 /// Emit an `std::fmt::Display` implementation for an enum type.
 #[proc_macro_derive(EnumDisplay)]
 pub fn emit_enum_display(input: TokenStream) -> TokenStream {
-    let s = input.to_string();
-    let ast = syn::parse_derive_input(&s).unwrap();
+    let ast: syn::DeriveInput = syn::parse(input).unwrap();
 
     let name = &ast.ident;
 
@@ -24,26 +23,25 @@ pub fn emit_enum_display(input: TokenStream) -> TokenStream {
         }
     };
 
-    toks.parse().unwrap()
+    toks.into()
 }
 
 /// Emit an `std::error::Error` implementation for an enum type. This is most useful in conjunction
 /// with `Debug` and `EnumDisplay`.
 #[proc_macro_derive(EnumError)]
 pub fn emit_enum_error(input: TokenStream) -> TokenStream {
-    let s = input.to_string();
-    let ast = syn::parse_derive_input(&s).unwrap();
+    let ast: syn::DeriveInput = syn::parse(input).unwrap();
 
     let name = &ast.ident;
 
-    let variants = match ast.body {
-        syn::Body::Enum(ref v) => v,
-        _                      => panic!("EnumError only works for enum types")
+    let en = match ast.data {
+        syn::Data::Enum(ref v) => v,
+        _ => panic!("EnumError only works for enum types"),
     };
 
     let mut serializations = Vec::new();
 
-    for variant in variants {
+    for variant in &en.variants {
         let ident = &variant.ident;
         let ident_str = format!("{}", ident);
         serializations.push(quote! {
@@ -61,7 +59,7 @@ pub fn emit_enum_error(input: TokenStream) -> TokenStream {
         }
     };
 
-    toks.parse().unwrap()
+    toks.into()
 }
 
 /// Emit an `std::convert::From<i32>` implementation for an enum type. When converting from an `i32`
@@ -69,46 +67,46 @@ pub fn emit_enum_error(input: TokenStream) -> TokenStream {
 /// symbol is specified with `#[EnumConvertFromIntFallback = "Identifier"]`.
 #[proc_macro_derive(EnumConvertFromInt, attributes(EnumConvertFromIntFallback))]
 pub fn emit_enum_from_primitive(input: TokenStream) -> TokenStream {
-    let s = input.to_string();
-    let ast = syn::parse_derive_input(&s).unwrap();
+    let ast: syn::DeriveInput = syn::parse(input).unwrap();
 
     let name = &ast.ident;
 
-    let variants = match ast.body {
-        syn::Body::Enum(ref v) => v,
-        _                      => panic!("EnumConvertFromInt only works for enum types")
+    let en = match ast.data {
+        syn::Data::Enum(ref v) => v,
+        _ => panic!("EnumConvertFromInt only works for enum types"),
     };
 
     let mut serializations = Vec::new();
 
-    for variant in variants {
+    for variant in &en.variants {
         let ident = &variant.ident;
         let val = &match variant.discriminant {
-            Some(ref expr) => expr,
-            None => panic!("{}::{} does not have an associated value", name, ident)
+            Some(ref expr) => &expr.1,
+            None => panic!("{}::{} does not have an associated value", name, ident),
         };
         serializations.push(quote! {
             #val => #name::#ident
         });
     }
 
-    let is_fallback_value = |attr: &syn::Attribute| {
-        match &attr.value {
-            &syn::MetaItem::NameValue(ref ident, _) => ident == "EnumConvertFromIntFallback",
-            _ => false
+    let is_fallback_value = |attr: &syn::Attribute| match attr.interpret_meta() {
+        Some(syn::Meta::NameValue(syn::MetaNameValue { ident, .. })) => {
+            ident == "EnumConvertFromIntFallback"
         }
+        _ => false,
     };
-    let fallback = match ast.attrs.iter().position(&is_fallback_value) {
-        Some(idx) => {
-            match &ast.attrs[idx].value {
-                &syn::MetaItem::NameValue(_, syn::Lit::Str(ref val, _)) => {
-                    let id = syn::Ident::new(val.as_str());
-                    quote! { #name::#id }
-                }
-                _ => panic!("EnumConvertFromIntFallback must be a string")
+    let fallback = match ast.attrs.into_iter().find(&is_fallback_value) {
+        Some(attr) => match attr.interpret_meta() {
+            Some(syn::Meta::NameValue(syn::MetaNameValue {
+                lit: syn::Lit::Str(val),
+                ..
+            })) => {
+                let id = syn::Ident::new(&val.value(), val.span());
+                quote! { #name::#id }
             }
+            _ => panic!("EnumConvertFromIntFallback must be a string"),
         },
-        None => quote! { panic!("Received unexpected value {}", val) }
+        None => quote! { panic!("Received unexpected value {}", val) },
     };
 
     let toks = quote! {
@@ -122,5 +120,5 @@ pub fn emit_enum_from_primitive(input: TokenStream) -> TokenStream {
         }
     };
 
-    toks.parse().unwrap()
+    toks.into()
 }
