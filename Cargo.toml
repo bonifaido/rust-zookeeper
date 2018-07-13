@@ -13,7 +13,7 @@ keywords = ["zk", "zookeeper", "distributed", "coordination"]
 [dependencies]
 byteorder = "1.2"
 bytes = "0.4"
-lazy_static = "0.1"
+lazy_static = "1.0"
 log = "0.4"
 mio = "0.6"
 mio-extras = "2"
