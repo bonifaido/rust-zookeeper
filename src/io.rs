@@ -173,7 +173,10 @@ impl ZkIo {
                     return;
                 }
             };
-            self.zxid = header.zxid;
+            if header.zxid > 0 {
+                // Update last-seen zxid when this is a request response
+                self.zxid = header.zxid;
+            }
             let response = RawResponse {
                 header: header,
                 data: Cursor::new(data.bytes().to_vec()),
