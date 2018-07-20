@@ -1,6 +1,6 @@
 [package]
 name = "zookeeper"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Nandor Kracser <bonifaido@gmail.com>"]
 license = "MIT"
 homepage = "https://github.com/bonifaido/rust-zookeeper"
@@ -18,7 +18,7 @@ log = "0.4"
 mio = "0.6"
 mio-extras = "2"
 snowflake = "1.0.0"
-zookeeper_derive = { path = "zookeeper-derive", version = "0.3.0" }
+zookeeper_derive = { path = "zookeeper-derive", version = "0.4.0" }
 
 [dev-dependencies]
 env_logger = "0.5"
