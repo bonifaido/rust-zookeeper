@@ -1,6 +1,6 @@
 [package]
 name = "zookeeper_derive"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Travis Gockel <travis@gockelhut.com>"]
 license = "MIT"
 description = "Derive implementations used to build the ZooKeeper library"
