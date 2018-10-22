@@ -20,8 +20,9 @@ use std::sync::mpsc;
 use std::mem;
 
 const ZK: Token = Token(1);
-const TIMER: Token = Token(2);
-const CHANNEL: Token = Token(3);
+const CHANNEL: Token = Token(2);
+const PING_TIMER: Token = Token(3);
+const CONN_TIMER: Token = Token(4);
 
 use try_io::{TryRead, TryWrite};
 
@@ -66,10 +67,13 @@ pub struct ZkIo {
     buffer: VecDeque<RawRequest>,
     inflight: VecDeque<RawRequest>,
     response: BytesMut,
-    timeout: Option<Timeout>,
-    timer: Timer<()>,
+    ping_timeout: Option<Timeout>,
+    conn_timeout: Option<Timeout>,
+    ping_timer: Timer<()>,
+    conn_timer: Timer<()>,
     timeout_ms: u64,
-    timeout_duration: Duration,
+    ping_timeout_duration: Duration,
+    conn_timeout_duration: Duration,
     watch_sender: mpsc::Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
@@ -84,13 +88,13 @@ pub struct ZkIo {
 impl ZkIo {
     pub fn new(
         addrs: Vec<SocketAddr>,
-        timeout_duration: Duration,
+        ping_timeout_duration: Duration,
         watch_sender: mpsc::Sender<WatchMessage>,
         state_listeners: ListenerSet<ZkState>
     ) -> ZkIo {
         trace!("ZkIo::new");
-        let timeout_ms = timeout_duration.as_secs() * 1000 +
-            timeout_duration.subsec_nanos() as u64 / 1000000;
+        let timeout_ms = ping_timeout_duration.as_secs() * 1000 +
+            ping_timeout_duration.subsec_nanos() as u64 / 1000000;
         let (tx, rx) = channel();
 
         let mut zkio = ZkIo {
@@ -102,8 +106,10 @@ impl ZkIo {
             // TODO server reads max up to 1MB, otherwise drops the connection,
             // size should be 1MB + tcp rcvBufsize
             response: BytesMut::with_capacity(1024 * 1024 * 2),
-            timeout: None,
-            timeout_duration: timeout_duration,
+            ping_timeout: None,
+            conn_timeout: None,
+            ping_timeout_duration: ping_timeout_duration,
+            conn_timeout_duration: Duration::from_secs(2),
             timeout_ms: timeout_ms,
             watch_sender: watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
@@ -114,7 +120,8 @@ impl ZkIo {
             // There's already another unwrap which needs to be addressed.
             poll: Poll::new().unwrap(),
             shutdown: false,
-            timer: Timer::default(),
+            ping_timer: Timer::default(),
+            conn_timer: Timer::default(),
             tx: tx,
             rx: rx,
         };
@@ -227,7 +234,7 @@ impl ZkIo {
             } else {
                 self.conn_resp = conn_resp;
                 info!("Connected: {:?}", self.conn_resp);
-                self.timeout_duration = Duration::from_millis(self.conn_resp.timeout / 3 * 2);
+                self.ping_timeout_duration = Duration::from_millis(self.conn_resp.timeout / 3 * 2);
 
                 self.state = if self.conn_resp.read_only {
                     ZkState::ConnectedReadOnly
@@ -253,28 +260,49 @@ impl ZkIo {
         }
     }
 
-    fn clear_ping_timeout(&mut self) {
-        trace!("clear_ping_timeout");
-
-        if let Some(timeout) = mem::replace(&mut self.timeout, None) {
-            // Cancel existing timer
-            self.timer.cancel_timeout(&timeout);
-        }
+    fn clear_timeout(&mut self, atype: Token) {
+        match atype {
+            PING_TIMER => {
+                trace!("clear_timeout: ping timeout");
+                if let Some(timeout) = mem::replace(&mut self.ping_timeout , None) {
+                    // Cancel existing timer
+                    self.ping_timer.cancel_timeout(&timeout);
+                }
+            },
+            CONN_TIMER => {
+                trace!("clear_timeout: connection timeout");
+                if let Some(timeout) = mem::replace(&mut self.conn_timeout , None) {
+                    // Cancel existing timer
+                    self.conn_timer.cancel_timeout(&timeout);
+                }
+            },
+            _ => unreachable!(),
+        };
     }
 
-    fn start_ping_timeout(&mut self) {
-        trace!("start_ping_timeout");
-
-        if let Some(timeout) = mem::replace(&mut self.timeout, None) {
-            // Cancel existing timer
-            self.timer.cancel_timeout(&timeout);
+    fn start_timeout(&mut self, atype: Token) {
+        match atype {
+            PING_TIMER => {
+                trace!("start_timeout: ping timeout");
+                if let Some(timeout) = mem::replace(&mut self.ping_timeout, None) {
+                    // Cancel existing timer
+                    self.ping_timer.cancel_timeout(&timeout);
+                }
+                let duration = self.ping_timeout_duration.clone();
+                self.ping_timeout = Some(self.ping_timer.set_timeout(duration, ()));
+            },
+            CONN_TIMER => {
+                trace!("start_timeout: connection timeout");
+                if let Some(timeout) = mem::replace(&mut self.conn_timeout, None) {
+                    // Cancel existing timer
+                    self.conn_timer.cancel_timeout(&timeout);
+                }
+                let duration = self.conn_timeout_duration.clone();
+                self.conn_timeout = Some(self.conn_timer.set_timeout(duration, ()));
+            },
+            _ => unreachable!(),
         }
-
-        let duration = self.timeout_duration.clone();
-        self.timeout = Some(self.timer.set_timeout(duration, ()));
-
-        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Reregister TIMER");
+        self.reregister_timer(atype);
     }
 
     fn reconnect(&mut self) {
@@ -300,8 +328,7 @@ impl ZkIo {
                 break;
             }
 
-            self.clear_ping_timeout();
-
+            self.clear_timeout(PING_TIMER);
             {
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
@@ -315,6 +342,7 @@ impl ZkIo {
                 };
                 info!("Started connecting to {:?}", host);
             }
+            self.start_timeout(CONN_TIMER);
 
             let request = self.connect_request();
             self.buffer.push_back(request);
@@ -345,14 +373,15 @@ impl ZkIo {
 
         match token {
             ZK => self.ready_zk(ready),
-            TIMER => self.ready_timer(ready),
             CHANNEL => self.ready_channel(ready),
+            PING_TIMER => self.ready_timer_ping(ready),
+            CONN_TIMER => self.ready_timer_conn(ready),
             _ => unreachable!(),
         }
     }
 
     fn ready_zk(&mut self, ready: Ready) {
-        self.clear_ping_timeout();
+        self.clear_timeout(PING_TIMER);
 
         if ready.is_writable() {
             while let Some(mut request) = self.buffer.pop_front() {
@@ -411,7 +440,7 @@ impl ZkIo {
         }
 
         if self.is_idle() {
-            self.start_ping_timeout();
+            self.start_timeout(PING_TIMER);
         }
 
         // Not sure that we need to write, but we always need to read, because of watches
@@ -461,13 +490,13 @@ impl ZkIo {
             .expect("Reregister CHANNEL");
     }
 
-    fn ready_timer(&mut self, _: Ready) {
-        trace!("ready_timer; thread={:?}", ::std::thread::current().id());
+    fn ready_timer_ping(&mut self, _: Ready) {
+        trace!("ready_timer_ping; thread={:?}", ::std::thread::current().id());
 
         loop {
-            match self.timer.poll() {
+            match self.ping_timer.poll() {
                 Some(_) => {
-                    self.clear_ping_timeout();
+                    self.clear_timeout(PING_TIMER);
                     if self.inflight.is_empty() {
                         // No inflight request indicates an idle connection. Send a ping.
                         trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
@@ -481,16 +510,48 @@ impl ZkIo {
                     }
                 },
                 None => {
-                    if self.timeout.is_some() {
+                    if self.ping_timeout.is_some() {
                         // Reregister on a spurious wakeup
-                        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-                            .expect("Reregister TIMER");
+                        self.reregister_timer(PING_TIMER)
                     }
 
                     break;
                 }
             }
         }
+    }
+
+    fn ready_timer_conn(&mut self, _: Ready) {
+        trace!("ready_timer_conn; thread={:?}", ::std::thread::current().id());
+
+        loop {
+            match self.conn_timer.poll() {
+                Some(_) => {
+                    self.clear_timeout(CONN_TIMER);
+                    if self.state == ZkState::Connecting {
+                        self.reconnect();
+                    }
+                },
+                None => {
+                    if self.conn_timeout.is_some() {
+                        // Reregister on a spurious wakeup
+                        self.reregister_timer(CONN_TIMER)
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    fn reregister_timer(&self, atype: Token) {
+        trace!("Reregister timer={:?}", atype);
+        let timer = match atype {
+            PING_TIMER => &self.ping_timer,
+            CONN_TIMER => &self.conn_timer,
+            _ => unreachable!(),
+        };
+        self.poll.reregister(timer, atype, Ready::readable(), pollopt()).expect("Register TIMER");
     }
 
     pub fn sender(&self) -> Sender<RawRequest> {
@@ -503,8 +564,10 @@ impl ZkIo {
         // Register Initial Interest
         self.poll.register(&self.sock, ZK, Ready::all(), pollopt())
             .expect("Register ZK");
-        self.poll.register(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Register TIMER");
+        self.poll.register(&self.ping_timer, PING_TIMER, Ready::readable(), pollopt())
+            .expect("Register PING_TIMER");
+        self.poll.register(&self.conn_timer, CONN_TIMER, Ready::readable(), pollopt())
+            .expect("Register CONN_TIMER");
         self.poll.register(&self.rx, CHANNEL, Ready::readable(), pollopt())
             .expect("Register CHANNEL");
 
