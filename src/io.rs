@@ -95,7 +95,7 @@ impl ZkIo {
 
         let mut zkio = ZkIo {
             sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
-            state: ZkState::NotConnected,
+            state: ZkState::Connecting,
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
             inflight: VecDeque::new(),
