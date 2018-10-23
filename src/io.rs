@@ -529,6 +529,7 @@ impl ZkIo {
                 Some(_) => {
                     self.clear_timeout(CONN_TIMER);
                     if self.state == ZkState::Connecting {
+                        info!("Reconnect due to connection timeout");
                         self.reconnect();
                     }
                 },
