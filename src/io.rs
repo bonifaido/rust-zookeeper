@@ -59,6 +59,7 @@ impl Hosts {
     }
 }
 
+#[derive(Clone, Debug)]
 enum ZkTimeout {
     Ping,
     Connect,
@@ -265,36 +266,27 @@ impl ZkIo {
     fn clear_timeout(&mut self, atype: ZkTimeout) {
         let timeout = match atype {
             ZkTimeout::Ping => {
-                trace!("clear_timeout: ping");
                 mem::replace(&mut self.ping_timeout , None)
             },
             ZkTimeout::Connect => {
-                trace!("clear_timeout: connection");
                 mem::replace(&mut self.conn_timeout , None)
             },
         };
         if let Some(timeout) = timeout {
+            trace!("clear_timeout: {:?}", atype);
             self.timer.cancel_timeout(&timeout);
         }
     }
 
     fn start_timeout(&mut self, atype: ZkTimeout) {
+        self.clear_timeout(atype.clone());
+        trace!("start_timeout: {:?}", atype);
         match atype {
             ZkTimeout::Ping => {
-                trace!("start_timeout: ping");
-                if let Some(timeout) = mem::replace(&mut self.ping_timeout, None) {
-                    // Cancel existing timer
-                    self.timer.cancel_timeout(&timeout);
-                }
                 let duration = self.ping_timeout_duration.clone();
                 self.ping_timeout = Some(self.timer.set_timeout(duration, atype));
             },
             ZkTimeout::Connect => {
-                trace!("start_timeout: connection");
-                if let Some(timeout) = mem::replace(&mut self.conn_timeout, None) {
-                    // Cancel existing timer
-                    self.timer.cancel_timeout(&timeout);
-                }
                 let duration = self.conn_timeout_duration.clone();
                 self.conn_timeout = Some(self.timer.set_timeout(duration, atype));
             },
