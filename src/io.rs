@@ -300,7 +300,7 @@ impl ZkIo {
             },
         }
         self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Register TIMER");
+            .expect("Reregister TIMER");
     }
 
     fn reconnect(&mut self) {
@@ -488,7 +488,7 @@ impl ZkIo {
     }
 
     fn ready_timer(&mut self, _: Ready) {
-        trace!("ready_timer; thread={:?}", ::std::thread::current().id());
+        trace!("ready_timer thread={:?}", ::std::thread::current().id());
 
         loop {
             match self.timer.poll() {
@@ -508,7 +508,7 @@ impl ZkIo {
                     }
                 },
                 Some(ZkTimeout::Connect) => {
-                    trace!("handle ping timeout");
+                    trace!("handle connection timeout");
                     self.clear_timeout(ZkTimeout::Connect);
                     if self.state == ZkState::Connecting {
                         info!("Reconnect due to connection timeout");
@@ -519,7 +519,7 @@ impl ZkIo {
                     if self.ping_timeout.is_some() || self.conn_timeout.is_some() {
                         trace!("Spurious timer");
                         self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-                            .expect("Register TIMER");
+                            .expect("Reregister TIMER");
                     }
                     break;
                 }
