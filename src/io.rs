@@ -237,6 +237,7 @@ impl ZkIo {
             } else {
                 self.conn_resp = conn_resp;
                 info!("Connected: {:?}", self.conn_resp);
+                self.timeout_ms = self.conn_resp.timeout;
                 self.ping_timeout_duration = Duration::from_millis(self.conn_resp.timeout / 3 * 2);
 
                 self.state = if self.conn_resp.read_only {
