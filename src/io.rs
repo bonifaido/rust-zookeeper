@@ -13,7 +13,7 @@ use mio_extras::channel::{Sender, Receiver, channel};
 use mio_extras::timer::{Timer, Timeout};
 use std::collections::VecDeque;
 use std::io;
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use std::sync::mpsc;
@@ -320,10 +320,10 @@ impl ZkIo {
             }
 
             self.clear_timeout(ZkTimeout::Ping);
+            self.clear_timeout(ZkTimeout::Connect);
             {
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
-                self.poll.deregister(&self.sock).unwrap();
                 self.sock = match TcpStream::connect(host) {
                     Ok(sock) => sock,
                     Err(e) => {
@@ -376,7 +376,11 @@ impl ZkIo {
         if ready.is_writable() {
             while let Some(mut request) = self.buffer.pop_front() {
                 match self.sock.try_write_buf(&mut request.data) {
-                    Ok(Some(0)) => warn!("Connection closed: write"),
+                    Ok(Some(0)) => {
+                        warn!("Connection closed: write");
+                        self.reconnect();
+                        return;
+                    }
                     Ok(Some(written)) => {
                         trace!("Written {:?} bytes", written);
                         if request.data.has_remaining() {
@@ -388,8 +392,14 @@ impl ZkIo {
                     }
                     Ok(None) => trace!("Spurious write"),
                     Err(e) => {
-                        error!("Failed to write socket: {:?}", e);
-                        self.reconnect();
+                        match e.kind() {
+                            ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
+                            _ => {
+                                error!("Failed to write socket: {:?}", e);
+                                self.reconnect();
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -397,15 +407,25 @@ impl ZkIo {
 
         if ready.is_readable() {
             match self.sock.try_read_buf(&mut self.response) {
-                Ok(Some(0)) => warn!("Connection closed: read"),
+                Ok(Some(0)) => {
+                    warn!("Connection closed: read");
+                    self.reconnect();
+                    return;
+                }
                 Ok(Some(read)) => {
                     trace!("Read {:?} bytes", read);
                     self.handle_response();
                 }
                 Ok(None) => trace!("Spurious read"),
                 Err(e) => {
-                    error!("Failed to read socket: {:?}", e);
-                    self.reconnect();
+                    match e.kind() {
+                        ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
+                        _ => {
+                            error!("Failed to read socket: {:?}", e);
+                            self.reconnect();
+                            return;
+                        }
+                    }
                 }
             }
 
