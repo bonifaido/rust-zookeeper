@@ -10,5 +10,5 @@ proc-macro = true
 
 [dependencies]
 quote = "0.6.3"
-syn = "0.14.4"
+syn = "0.15.40"
 #proc-macro2 = { version = "0.4", features = ["nightly"] }
