@@ -21,7 +21,7 @@ snowflake = "1.0.0"
 zookeeper_derive = { path = "zookeeper-derive", version = "0.4.0" }
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 
 [features]
 unstable = []
