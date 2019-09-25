@@ -38,7 +38,7 @@ pub struct Watch {
     /// The type of changes this watch is looking for.
     pub watch_type: WatchType,
     /// The handler for this watch, to call when it is triggered.
-    pub watcher: Box<Watcher>,
+    pub watcher: Box<dyn Watcher>,
 }
 
 /// The interface for handling events when a `Watch` triggers.
