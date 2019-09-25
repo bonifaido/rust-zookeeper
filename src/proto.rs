@@ -29,7 +29,7 @@ pub trait ReadFrom: Sized {
 }
 
 pub trait WriteTo {
-    fn write_to(&self, writer: &mut Write) -> Result<()>;
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()>;
 
     fn to_len_prefixed_buf(&self) -> Result<ByteBuf> {
         let mut buf = Cursor::new(Vec::new());
@@ -94,21 +94,21 @@ impl<R: Read> BufferReader for R {
 }
 
 impl WriteTo for u8 {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_u8(*self));
         Ok(())
     }
 }
 
 impl WriteTo for String {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
         writer.write_all(self.as_ref())
     }
 }
 
 impl<T: WriteTo> WriteTo for Vec<T> {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
         let mut res = Ok(());
         for elem in self.iter() {
@@ -132,7 +132,7 @@ impl ReadFrom for Acl {
 }
 
 impl WriteTo for Acl {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         writer.write_u32::<BigEndian>(self.perms.code())?;
         self.scheme.write_to(writer)?;
         self.id.write_to(writer)
@@ -180,7 +180,7 @@ impl ConnectRequest {
 }
 
 impl WriteTo for ConnectRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.protocol_version));
         try!(writer.write_i64::<BigEndian>(self.last_zxid_seen));
         try!(writer.write_i32::<BigEndian>(self.timeout));
@@ -230,7 +230,7 @@ pub struct RequestHeader {
 }
 
 impl WriteTo for RequestHeader {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.xid));
         try!(writer.write_i32::<BigEndian>(self.opcode as i32));
         Ok(())
@@ -262,7 +262,7 @@ pub struct CreateRequest {
 }
 
 impl WriteTo for CreateRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(self.path.write_to(writer));
         try!(self.data.write_to(writer));
         try!(self.acl.write_to(writer));
@@ -287,7 +287,7 @@ pub struct DeleteRequest {
 }
 
 impl WriteTo for DeleteRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(self.path.write_to(writer));
         try!(writer.write_i32::<BigEndian>(self.version));
         Ok(())
@@ -300,7 +300,7 @@ pub struct StringAndBoolRequest {
 }
 
 impl WriteTo for StringAndBoolRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(self.path.write_to(writer));
         try!(writer.write_u8(self.watch as u8));
         Ok(())
@@ -325,7 +325,7 @@ pub struct GetAclRequest {
 }
 
 impl WriteTo for GetAclRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         self.path.write_to(writer)
     }
 }
@@ -353,7 +353,7 @@ pub struct SetAclRequest {
 }
 
 impl WriteTo for SetAclRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(self.path.write_to(writer));
         try!(self.acl.write_to(writer));
         try!(writer.write_i32::<BigEndian>(self.version));
@@ -370,7 +370,7 @@ pub struct SetDataRequest {
 }
 
 impl WriteTo for SetDataRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(self.path.write_to(writer));
         try!(self.data.write_to(writer));
         try!(writer.write_i32::<BigEndian>(self.version));
@@ -418,7 +418,7 @@ pub struct AuthRequest {
 }
 
 impl WriteTo for AuthRequest {
-    fn write_to(&self, writer: &mut Write) -> Result<()> {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         try!(writer.write_i32::<BigEndian>(self.typ));
         try!(self.scheme.write_to(writer));
         self.auth.write_to(writer)
@@ -429,7 +429,7 @@ pub struct EmptyRequest;
 pub struct EmptyResponse;
 
 impl WriteTo for EmptyRequest {
-    fn write_to(&self, _: &mut Write) -> Result<()> {
+    fn write_to(&self, _: &mut dyn Write) -> Result<()> {
         Ok(())
     }
 }

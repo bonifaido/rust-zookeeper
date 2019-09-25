@@ -14,7 +14,7 @@ impl Subscription {
     }
 }
 
-type ListenerMap<T> = HashMap<Subscription, Box<Fn(T) + Send + 'static>>;
+type ListenerMap<T> = HashMap<Subscription, Box<dyn Fn(T) + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct ListenerSet<T>
