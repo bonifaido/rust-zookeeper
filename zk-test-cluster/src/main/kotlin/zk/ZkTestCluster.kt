@@ -1,14 +1,19 @@
 package zk
 
 import org.apache.curator.test.TestingCluster
-import org.apache.zookeeper.WatchedEvent
 import org.apache.zookeeper.Watcher
 import org.apache.zookeeper.ZooKeeper
+import kotlin.system.exitProcess
 
 
-public object ZkTestCluster {
+object ZkTestCluster {
 
-    public fun run(args: Array<String>) {
+    fun run(args: Array<String>) {
+
+        if (args.isEmpty()) {
+            println("Cluster size must be specified")
+            exitProcess(-1)
+        }
 
         val instanceQty = Integer.valueOf(args[0])
         var killedInstances = 0
@@ -18,11 +23,9 @@ public object ZkTestCluster {
         cluster.start()
 
         // Wait until servers start up properly and print the connectString
-        val zooKeeper = ZooKeeper(cluster.connectString, 5000, object : Watcher {
-            override fun process(event: WatchedEvent) {
-                if (event.state === Watcher.Event.KeeperState.SyncConnected) {
-                    println(cluster.connectString)
-                }
+        val zooKeeper = ZooKeeper(cluster.connectString, 5000, Watcher { event ->
+            if (event.state === Watcher.Event.KeeperState.SyncConnected) {
+                println(cluster.connectString)
             }
         })
 
@@ -38,7 +41,7 @@ public object ZkTestCluster {
                     zooKeeper.close()
                     cluster.close()
                     println("Servers closed")
-                    System.exit(0)
+                    exitProcess(0)
                 }
             }
         } while (c.toInt() != -1)
