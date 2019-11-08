@@ -7,7 +7,7 @@ use std::fmt;
 pub enum ZkError {
     /// This code is never returned from the server. It should not be used other than to indicate a
     /// range. Specifically error codes greater than this value are API errors (while values less
-    /// than this indicate a system error.
+    /// than this indicate a system error).
     APIError = -100,
     /// Client authentication failed.
     AuthFailed = -115,
