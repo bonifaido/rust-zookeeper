@@ -6,7 +6,7 @@ use zookeeper::{RawResponse, RawRequest};
 use listeners::ListenerSet;
 
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{Buf, BytesMut, Bytes, IntoBuf};
+use bytes::{Buf, Bytes, BytesMut};
 use mio::net::TcpStream;
 use mio::*;
 use mio_extras::channel::{Sender, Receiver, channel};
@@ -172,7 +172,7 @@ impl ZkIo {
         let len = bytes.len();
         trace!("handle_response in {:?} state [{}]", self.state, len);
 
-        let mut data = bytes.into_buf();
+        let mut data = &*bytes;
 
         if self.state != ZkState::Connecting {
             let header = match ReplyHeader::read_from(&mut data) {
