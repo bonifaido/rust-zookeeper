@@ -20,10 +20,11 @@
 
 //! TryRead and TryWrite traits from mio 0.5.1
 
-use std::io::{Read, Write, Result};
 use bytes::{Buf, BufMut};
+use std::io::{Read, Result, Write};
+use std::mem::MaybeUninit;
 
-pub trait TryRead {
+pub(crate) trait TryRead {
     fn try_read_buf<B: BufMut>(&mut self, buf: &mut B) -> Result<Option<usize>>
         where Self : Sized
     {
@@ -32,7 +33,7 @@ pub trait TryRead {
         // If your protocol is msg based (instead of continuous stream) you should
         // ensure that your buffer is large enough to hold an entire segment (1532 bytes if not jumbo
         // frames)
-        let res = self.try_read(unsafe { buf.bytes_mut() });
+        let res = self.try_read(buf.bytes_mut());
 
         if let Ok(Some(cnt)) = res {
             unsafe { buf.advance_mut(cnt); }
@@ -41,10 +42,10 @@ pub trait TryRead {
         res
     }
 
-    fn try_read(&mut self, buf: &mut [u8]) -> Result<Option<usize>>;
+    fn try_read(&mut self, buf: &mut [MaybeUninit<u8>]) -> Result<Option<usize>>;
 }
 
-pub trait TryWrite {
+pub(crate) trait TryWrite {
     fn try_write_buf<B: Buf>(&mut self, buf: &mut B) -> Result<Option<usize>>
         where Self : Sized
     {
@@ -61,8 +62,10 @@ pub trait TryWrite {
 }
 
 impl<T: Read> TryRead for T {
-    fn try_read(&mut self, dst: &mut [u8]) -> Result<Option<usize>> {
-        self.read(dst).map_non_block()
+    fn try_read(&mut self, dst: &mut [MaybeUninit<u8>]) -> Result<Option<usize>> {
+        // safety: read will only ever read _into_ the given memory, never read _from_ it.
+        self.read(unsafe { std::mem::transmute::<&mut [MaybeUninit<u8>], &mut [u8]>(dst) })
+            .map_non_block()
     }
 }
 
@@ -72,7 +75,7 @@ impl<T: Write> TryWrite for T {
     }
 }
 
-pub trait TryAccept {
+pub(crate) trait TryAccept {
     type Output;
 
     fn accept(&self) -> Result<Option<Self::Output>>;
@@ -85,7 +88,7 @@ pub trait TryAccept {
  */
 
 /// A helper trait to provide the map_non_block function on Results.
-pub trait MapNonBlock<T> {
+pub(crate) trait MapNonBlock<T> {
     /// Maps a `Result<T>` to a `Result<Option<T>>` by converting
     /// operation-would-block errors into `Ok(None)`.
     fn map_non_block(self) -> Result<Option<T>>;

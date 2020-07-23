@@ -89,15 +89,15 @@ pub fn emit_enum_from_primitive(input: TokenStream) -> TokenStream {
         });
     }
 
-    let is_fallback_value = |attr: &syn::Attribute| match attr.interpret_meta() {
-        Some(syn::Meta::NameValue(syn::MetaNameValue { ident, .. })) => {
-            ident == "EnumConvertFromIntFallback"
+    let is_fallback_value = |attr: &syn::Attribute| match attr.parse_meta() {
+        Ok(syn::Meta::NameValue(syn::MetaNameValue { path, .. })) => {
+            path.is_ident("EnumConvertFromIntFallback")
         }
         _ => false,
     };
     let fallback = match ast.attrs.into_iter().find(&is_fallback_value) {
-        Some(attr) => match attr.interpret_meta() {
-            Some(syn::Meta::NameValue(syn::MetaNameValue {
+        Some(attr) => match attr.parse_meta() {
+            Ok(syn::Meta::NameValue(syn::MetaNameValue {
                 lit: syn::Lit::Str(val),
                 ..
             })) => {
