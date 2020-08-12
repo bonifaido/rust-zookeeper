@@ -1,10 +1,3 @@
-use consts::{ZkError, ZkState};
-use proto::{ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader,
-            WriteTo};
-use watch::WatchMessage;
-use zookeeper::{RawResponse, RawRequest};
-use listeners::ListenerSet;
-
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, Bytes, BytesMut};
 use mio::net::TcpStream;
@@ -18,12 +11,19 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use std::sync::mpsc;
 use std::mem;
+use log::*;
+use lazy_static::lazy_static;
 
 const ZK: Token = Token(1);
 const TIMER: Token = Token(2);
 const CHANNEL: Token = Token(3);
 
-use try_io::{TryRead, TryWrite};
+use crate::{ZkState, ZkError};
+use crate::zookeeper::{RawRequest, RawResponse};
+use crate::watch::WatchMessage;
+use crate::listeners::ListenerSet;
+use crate::proto::{ConnectResponse, ReplyHeader, ReadFrom, OpCode, ConnectRequest, WriteTo, ByteBuf, RequestHeader};
+use crate::try_io::{TryWrite, TryRead};
 
 lazy_static! {
     static ref PING: ByteBuf =
@@ -43,7 +43,7 @@ fn pollopt() -> PollOpt {
 impl Hosts {
     fn new(addrs: Vec<SocketAddr>) -> Hosts {
         Hosts {
-            addrs: addrs,
+            addrs,
             index: 0,
         }
     }
@@ -112,10 +112,10 @@ impl ZkIo {
             response: BytesMut::with_capacity(1024 * 1024 * 2),
             ping_timeout: None,
             conn_timeout: None,
-            ping_timeout_duration: ping_timeout_duration,
+            ping_timeout_duration,
             conn_timeout_duration: Duration::from_secs(2),
-            timeout_ms: timeout_ms,
-            watch_sender: watch_sender,
+            timeout_ms,
+            watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
             zxid: 0,
             ping_sent: Instant::now(),
@@ -125,8 +125,8 @@ impl ZkIo {
             poll: Poll::new().unwrap(),
             shutdown: false,
             timer: Timer::default(),
-            tx: tx,
-            rx: rx,
+            tx,
+            rx,
         };
 
         let request = zkio.connect_request();
@@ -188,7 +188,7 @@ impl ZkIo {
                 self.zxid = header.zxid;
             }
             let response = RawResponse {
-                header: header,
+                header,
                 data: Cursor::new(data.bytes().to_vec()),
             }; // TODO COPY!
             match response.header.xid {
@@ -481,7 +481,7 @@ impl ZkIo {
                         err: ZkError::ConnectionLoss as i32,
                     };
                     let response = RawResponse {
-                        header: header,
+                        header,
                         data: ByteBuf::new(vec![]),
                     };
                     self.send_response(request, response);

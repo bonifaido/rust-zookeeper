@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use zookeeper_derive::*;
 
 /// Basic type for errors returned from the server.
 #[derive(Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq)]

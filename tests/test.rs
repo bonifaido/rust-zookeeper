@@ -1,25 +1,16 @@
 #![deny(unused_mut)]
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-extern crate zookeeper;
-
-mod test_zk;
-mod test_cache;
-mod test_recursive;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 
-
 pub struct ZkCluster {
     process: Child,
-    connect_string: String,
+    pub connect_string: String,
     closed: bool,
 }
 
 impl ZkCluster {
-    fn start(instances: usize) -> ZkCluster {
+    pub fn start(instances: usize) -> ZkCluster {
         let mut process = match Command::new("java")
                                     .arg("-jar")
                                     .arg("zk-test-cluster/target/main.jar")
@@ -32,8 +23,8 @@ impl ZkCluster {
         };
         let connect_string = Self::read_connect_string(&mut process);
         ZkCluster {
-            process: process,
-            connect_string: connect_string,
+            process,
+            connect_string,
             closed: false,
         }
     }
@@ -48,11 +39,11 @@ impl ZkCluster {
         connect_string
     }
 
-    fn kill_an_instance(&mut self) {
+    pub fn kill_an_instance(&mut self) {
         self.process.stdin.as_mut().unwrap().write(b"k").unwrap();
     }
 
-    fn shutdown(&mut self) {
+    pub fn shutdown(&mut self) {
         if !self.closed {
             self.process.stdin.as_mut().unwrap().write(b"q").unwrap();
             assert!(self.process.wait().unwrap().success());

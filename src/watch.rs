@@ -1,10 +1,11 @@
-use consts::{KeeperState, WatchedEventType};
-use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
-use proto::ReadFrom;
-use zookeeper::RawResponse;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
 use std::io;
+use log::*;
+
+use crate::{WatchedEventType, KeeperState};
+use crate::zookeeper::RawResponse;
+use crate::proto::ReadFrom;
 
 /// Represents a change on the ZooKeeper that a `Watcher` is able to respond to.
 ///
@@ -44,7 +45,7 @@ pub struct Watch {
 /// The interface for handling events when a `Watch` triggers.
 pub trait Watcher: Send {
     /// Receive the triggered event.
-    fn handle(&self, WatchedEvent);
+    fn handle(&self, event: WatchedEvent);
 }
 
 impl<F> Watcher for F where F: Fn(WatchedEvent) + Send
@@ -143,11 +144,11 @@ impl<W: Watcher> ZkWatch<W> {
 
                     let (matching, left): (_, Vec<Watch>) = watches.into_iter().partition(|w| {
                         match event.event_type {
-                            NodeChildrenChanged => w.watch_type == WatchType::Child,
-                            NodeCreated | NodeDataChanged => {
+                            WatchedEventType::NodeChildrenChanged => w.watch_type == WatchType::Child,
+                            WatchedEventType::NodeCreated | WatchedEventType::NodeDataChanged => {
                                 w.watch_type == WatchType::Data || w.watch_type == WatchType::Exist
                             }
-                            NodeDeleted => true,
+                            WatchedEventType::NodeDeleted => true,
                             _ => false,
                         }
                     });

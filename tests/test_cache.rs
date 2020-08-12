@@ -1,13 +1,14 @@
+mod test;
+
 use zookeeper::CreateMode::*;
 use zookeeper::{Acl, WatchedEvent, ZooKeeper, ZooKeeperExt};
 use zookeeper::recipes::cache::PathChildrenCache;
-
-use ZkCluster;
+use test::ZkCluster;
 
 use std::sync::Arc;
 use std::time::Duration;
 use env_logger;
-
+use log::*;
 
 #[test]
 fn path_children_cache_test() {

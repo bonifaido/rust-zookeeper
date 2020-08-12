@@ -9,6 +9,7 @@ documentation = "http://bonifaido.github.io/rust-zookeeper"
 description = "A minimal ZooKeeper client"
 readme = "README.md"
 keywords = ["zk", "zookeeper", "distributed", "coordination"]
+edition = "2018"
 
 [dependencies]
 byteorder = "1.2"
@@ -25,7 +26,3 @@ env_logger = "0.7"
 
 [features]
 unstable = []
-
-[[test]]
-name = "test"
-path = "tests/test.rs"

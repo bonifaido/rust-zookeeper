@@ -1,14 +1,16 @@
+mod test;
+
 use zookeeper::{Acl, CreateMode, WatchedEvent, ZooKeeper};
 use zookeeper::KeeperState;
 
-use ZkCluster;
+use test::ZkCluster;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread;
 use env_logger;
-
+use log::*;
 
 #[test]
 fn zk_test() {

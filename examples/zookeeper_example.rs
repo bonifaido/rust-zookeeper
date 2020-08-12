@@ -1,8 +1,4 @@
 #![deny(unused_mut)]
-extern crate zookeeper;
-#[macro_use]
-extern crate log;
-extern crate env_logger;
 
 use std::io;
 use std::sync::Arc;
@@ -12,6 +8,7 @@ use std::env;
 use std::sync::mpsc;
 use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
 use zookeeper::recipes::cache::PathChildrenCache;
+use log::*;
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {

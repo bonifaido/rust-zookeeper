@@ -4,13 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::collections::HashMap;
-use consts::{WatchedEventType, ZkError, ZkState};
-use data::Stat;
-use paths::make_path;
-use watch::WatchedEvent;
-use zookeeper::{ZkResult, ZooKeeper};
-use zookeeper_ext::ZooKeeperExt;
-use listeners::{ListenerSet, Subscription};
+use log::*;
+
+use crate::{Stat, ZkState, ZooKeeper, Subscription, ZkResult, WatchedEvent, WatchedEventType, ZkError, ZooKeeperExt};
+use crate::listeners::ListenerSet;
+use crate::paths::make_path;
 
 /// Data contents of a znode and associated `Stat`.
 pub type ChildData = Arc<(Vec<u8>, Stat)>;
@@ -35,6 +33,7 @@ enum RefreshMode {
     ForceGetDataAndStat,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum Operation {
     Initialize,
@@ -76,12 +75,12 @@ impl PathChildrenCache {
     pub fn new(zk: Arc<ZooKeeper>, path: &str) -> ZkResult<PathChildrenCache> {
         let data = Arc::new(Mutex::new(HashMap::new()));
 
-        try!(zk.ensure_path(path));
+        zk.ensure_path(path)?;
 
         Ok(PathChildrenCache {
             path: Arc::new(path.to_owned()),
-            zk: zk,
-            data: data,
+            zk,
+            data,
             worker_thread: None,
             channel: None,
             listener_subscription: None,
@@ -111,7 +110,7 @@ impl PathChildrenCache {
             };
         };
 
-        let children = try!(zk.get_children_w(&path, watcher));
+        let children = zk.get_children_w(&path, watcher)?;
 
         let mut data_locked = data.lock().unwrap();
 
@@ -127,10 +126,10 @@ impl PathChildrenCache {
 
                 data_locked.insert(child_path.clone(), child_data.clone());
 
-                try!(ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildAdded(child_path, child_data))).map_err(|err| {
+                ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildAdded(child_path, child_data))).map_err(|err| {
                     info!("error sending ChildAdded event: {:?}", err);
                     ZkError::APIError
-                }));
+                })?;
             }
         }
 

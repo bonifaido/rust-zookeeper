@@ -1,8 +1,8 @@
-use acl::*;
-use consts::{CreateMode, ZkError};
-use zookeeper::{ZkResult, ZooKeeper};
 use std::iter::once;
 use std::collections::VecDeque;
+use log::*;
+
+use crate::{ZkResult, ZooKeeper, Acl, CreateMode, ZkError};
 
 /// Extended ZooKeeper operations that are not needed for the "core."
 pub trait ZooKeeperExt {
