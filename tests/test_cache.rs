@@ -1,9 +1,9 @@
 mod test;
 
 use test::ZkCluster;
-use zookeeper::recipes::cache::PathChildrenCache;
-use zookeeper::CreateMode::*;
-use zookeeper::{Acl, WatchedEvent, ZooKeeper, ZooKeeperExt};
+use zookeeper_async::recipes::cache::PathChildrenCache;
+use zookeeper_async::CreateMode::*;
+use zookeeper_async::{Acl, WatchedEvent, ZooKeeper, ZooKeeperExt};
 
 use env_logger;
 use log::*;

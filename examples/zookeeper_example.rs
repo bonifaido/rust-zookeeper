@@ -7,8 +7,8 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use zookeeper::recipes::cache::PathChildrenCache;
-use zookeeper::{Acl, CreateMode, WatchedEvent, Watcher, ZooKeeper};
+use zookeeper_async::recipes::cache::PathChildrenCache;
+use zookeeper_async::{Acl, CreateMode, WatchedEvent, Watcher, ZooKeeper};
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {

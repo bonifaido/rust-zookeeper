@@ -3,7 +3,7 @@ mod test;
 use std::iter::once;
 use std::time::Duration;
 use test::ZkCluster;
-use zookeeper::{WatchedEvent, ZkError, ZooKeeper, ZooKeeperExt};
+use zookeeper_async::{WatchedEvent, ZkError, ZooKeeper, ZooKeeperExt};
 
 #[tokio::test]
 async fn get_children_recursive_test() {

@@ -1,7 +1,7 @@
 mod test;
 
-use zookeeper::KeeperState;
-use zookeeper::{Acl, CreateMode, WatchedEvent, ZooKeeper};
+use zookeeper_async::KeeperState;
+use zookeeper_async::{Acl, CreateMode, WatchedEvent, ZooKeeper};
 
 use test::ZkCluster;
 
