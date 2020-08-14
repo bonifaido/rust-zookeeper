@@ -486,7 +486,7 @@ impl ZkIo {
                 0 => {
                     warn!("Connection closed: read");
 
-                    if self.state == ZkState::Closed {
+                    if self.state != ZkState::Closed {
                         self.reconnect().await;
                     }
                 }
