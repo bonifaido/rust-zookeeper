@@ -1,5 +1,3 @@
-[rust-zookeeper][doc]
-=====================
 [![Version](https://img.shields.io/crates/v/zookeeper-async.svg)](https://crates.io/crates/zookeeper-async)
 
 Async Zookeeper client written 100% in Rust, based on tokio.
@@ -7,15 +5,6 @@ Async Zookeeper client written 100% in Rust, based on tokio.
 This library is intended to be equivalent with the official (low-level) [ZooKeeper][javadoc] client which ships with the official ZK distribution.
 
 I have plans to implement recipes and more complex [Curator][curator] like logic as well, but that takes a lot of time, so pull requests are more than welcome! At the moment only PathChildrenCache is implemented.
-
-## Usage
-
-Put this in your Cargo.toml:
-
-```ini
-[dependencies]
-zookeeper-async = "1.0"
-```
 
 ## Examples
 Check the [examples][examples] directory
