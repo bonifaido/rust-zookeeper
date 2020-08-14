@@ -1,9 +1,8 @@
 [rust-zookeeper][doc]
 =====================
 [![Version](https://img.shields.io/crates/v/zookeeper-async.svg)](https://crates.io/crates/zookeeper-async)
-[![License](https://img.shields.io/crates/l/zookeeper-async.svg)](http://opensource.org/licenses/MIT)
 
-Async Zookeeper client written 100% in Rust
+Async Zookeeper client written 100% in Rust, based on tokio.
 
 This library is intended to be equivalent with the official (low-level) [ZooKeeper][javadoc] client which ships with the official ZK distribution.
 
@@ -15,7 +14,7 @@ Put this in your Cargo.toml:
 
 ```ini
 [dependencies]
-zookeeper = "1.0"
+zookeeper-async = "1.0"
 ```
 
 ## Examples
