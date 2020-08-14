@@ -1,11 +1,9 @@
 [rust-zookeeper][doc]
 =====================
-[![Build Status](https://travis-ci.org/bonifaido/rust-zookeeper.svg?branch=master)](https://travis-ci.org/bonifaido/rust-zookeeper)
-[![Coverage Status](https://coveralls.io/repos/bonifaido/rust-zookeeper/badge.svg?branch=master&service=github)](https://coveralls.io/github/bonifaido/rust-zookeeper?branch=master)
-[![Version](https://img.shields.io/crates/v/zookeeper.svg)](https://crates.io/crates/zookeeper)
+[![Version](https://img.shields.io/crates/v/zookeeper.svg)](https://crates.io/crates/zookeeper-async)
 [![License](https://img.shields.io/crates/l/zookeeper.svg)](http://opensource.org/licenses/MIT)
 
-Zookeeper client written 100% in Rust
+Async Zookeeper client written 100% in Rust
 
 This library is intended to be equivalent with the official (low-level) [ZooKeeper][javadoc] client which ships with the official ZK distribution.
 
@@ -17,13 +15,7 @@ Put this in your Cargo.toml:
 
 ```ini
 [dependencies]
-zookeeper = "0.5"
-```
-
-And this in your crate root:
-
-```rust
-extern crate zookeeper;
+zookeeper = "1.0"
 ```
 
 ## Examples
@@ -35,8 +27,7 @@ Also if you find a bug or would like to see a feature implemented please raise a
 ## Documentation
 Documentation is available on the [gh-pages][doc] branch.
 
-[doc]: http://bonifaido.github.io/rust-zookeeper
-[examples]: https://github.com/bonifaido/rust-zookeeper/tree/master/examples
+[examples]: https://github.com/krojew/rust-zookeeper/tree/master/examples
 [javadoc]: https://zookeeper.apache.org/doc/r3.4.6/api/org/apache/zookeeper/ZooKeeper.html
 [curator]: http://curator.apache.org/
 
@@ -48,4 +39,4 @@ cd ..
 cargo test
 ```
 ## Contributing
-All contributions are welcome! If you need some inspiration, please take a look at the currently open [issues](https://github.com/bonifaido/rust-zookeeper/issues).
+All contributions are welcome! If you need some inspiration, please take a look at the currently open [issues](https://github.com/krojew/rust-zookeeper/issues).
