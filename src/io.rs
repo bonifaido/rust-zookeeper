@@ -207,7 +207,9 @@ impl ZkIo {
                     Some(request) => {
                         self.send_response(request, response).await;
                     }
-                    None => panic!("Shouldn't happen, no inflight request"),
+                    None => {
+                        warn!("Got response with no inflight request - probably already closed")
+                    }
                 },
             }
         } else {
