@@ -45,7 +45,7 @@ impl Permission {
     /// Check that all `permissions` are set.
     ///
     /// ```
-    /// use zookeeper::Permission;
+    /// use zookeeper_async::Permission;
     ///
     /// (Permission::READ | Permission::WRITE).can(Permission::WRITE); // -> true
     /// Permission::ADMIN.can(Permission::CREATE); // -> false
@@ -71,7 +71,6 @@ impl ops::BitOr for Permission {
     }
 }
 
-
 impl fmt::Display for Permission {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if *self == Permission::ALL {
@@ -89,11 +88,21 @@ impl fmt::Display for Permission {
                 }
             };
 
-            if self.can(Permission::READ)   { write!(f, "{}READ", tick())?; }
-            if self.can(Permission::WRITE)  { write!(f, "{}WRITE", tick())?; }
-            if self.can(Permission::CREATE) { write!(f, "{}CREATE", tick())?; }
-            if self.can(Permission::DELETE) { write!(f, "{}DELETE", tick())?; }
-            if self.can(Permission::ADMIN)  { write!(f, "{}ADMIN", tick())?; }
+            if self.can(Permission::READ) {
+                write!(f, "{}READ", tick())?;
+            }
+            if self.can(Permission::WRITE) {
+                write!(f, "{}WRITE", tick())?;
+            }
+            if self.can(Permission::CREATE) {
+                write!(f, "{}CREATE", tick())?;
+            }
+            if self.can(Permission::DELETE) {
+                write!(f, "{}DELETE", tick())?;
+            }
+            if self.can(Permission::ADMIN) {
+                write!(f, "{}ADMIN", tick())?;
+            }
             Ok(())
         }
     }
@@ -106,10 +115,10 @@ mod tests {
     #[test]
     fn permission_bitor() {
         let all = Permission::READ
-                | Permission::WRITE
-                | Permission::CREATE
-                | Permission::DELETE
-                | Permission::ADMIN;
+            | Permission::WRITE
+            | Permission::CREATE
+            | Permission::DELETE
+            | Permission::ADMIN;
         assert_eq!(Permission::ALL, all);
     }
 
@@ -123,8 +132,14 @@ mod tests {
     fn permission_format() {
         assert_eq!("ALL", Permission::ALL.to_string());
         assert_eq!("NONE", Permission::NONE.to_string());
-        assert_eq!("READ|WRITE", (Permission::READ | Permission::WRITE).to_string());
-        assert_eq!("CREATE|DELETE", (Permission::CREATE | Permission::DELETE).to_string());
+        assert_eq!(
+            "READ|WRITE",
+            (Permission::READ | Permission::WRITE).to_string()
+        );
+        assert_eq!(
+            "CREATE|DELETE",
+            (Permission::CREATE | Permission::DELETE).to_string()
+        );
         assert_eq!("ADMIN", Permission::ADMIN.to_string());
     }
 }
@@ -154,7 +169,10 @@ pub struct Acl {
 impl Acl {
     /// Create a new ACL with the given `permissions`, `scheme`, and `id`.
     pub fn new<T, U>(permissions: Permission, scheme: T, id: U) -> Acl
-            where T: ToString, U: ToString {
+    where
+        T: ToString,
+        U: ToString,
+    {
         Acl {
             perms: permissions,
             scheme: scheme.to_string(),
