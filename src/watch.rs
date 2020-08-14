@@ -1,11 +1,11 @@
-use std::sync::mpsc::{self, Sender, Receiver};
-use std::collections::HashMap;
-use std::io;
 use log::*;
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::{WatchedEventType, KeeperState};
-use crate::zookeeper::RawResponse;
 use crate::proto::ReadFrom;
+use crate::zookeeper::RawResponse;
+use crate::{KeeperState, WatchedEventType};
 
 /// Represents a change on the ZooKeeper that a `Watcher` is able to respond to.
 ///
@@ -22,7 +22,7 @@ pub struct WatchedEvent {
 }
 
 /// Describes what a `Watch` is looking for.
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum WatchType {
     /// Watching for changes to children.
     Child,
@@ -42,19 +42,31 @@ pub struct Watch {
     pub watcher: Box<dyn Watcher>,
 }
 
+impl Debug for Watch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("Watch")
+            .field("path", &self.path)
+            .field("watch_type", &self.watch_type)
+            .finish()
+    }
+}
+
 /// The interface for handling events when a `Watch` triggers.
 pub trait Watcher: Send {
     /// Receive the triggered event.
     fn handle(&self, event: WatchedEvent);
 }
 
-impl<F> Watcher for F where F: Fn(WatchedEvent) + Send
+impl<F> Watcher for F
+where
+    F: Fn(WatchedEvent) + Send,
 {
     fn handle(&self, event: WatchedEvent) {
         self(event)
     }
 }
 
+#[derive(Debug)]
 pub enum WatchMessage {
     Event(RawResponse),
     Watch(Watch),
@@ -71,14 +83,14 @@ pub struct ZkWatch<W: Watcher> {
 impl<W: Watcher> ZkWatch<W> {
     pub fn new(watcher: W, chroot: Option<String>) -> Self {
         trace!("ZkWatch::new");
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = channel(64);
 
         ZkWatch {
             watches: HashMap::new(),
-            watcher: watcher,
-            chroot: chroot,
+            watcher,
+            chroot,
             tx,
-            rx
+            rx,
         }
     }
 
@@ -86,12 +98,10 @@ impl<W: Watcher> ZkWatch<W> {
         self.tx.clone()
     }
 
-    pub fn run(mut self) -> io::Result<()> {
-        while let Ok(msg) = self.rx.recv() {
+    pub async fn run(mut self) {
+        while let Some(msg) = self.rx.recv().await {
             self.process_message(msg);
         }
-
-        Ok(())
     }
 
     fn process_message(&mut self, message: WatchMessage) {
@@ -100,20 +110,21 @@ impl<W: Watcher> ZkWatch<W> {
                 info!("Event thread got response {:?}", response.header);
                 let mut data = response.data;
                 match response.header.err {
-                    0 => {
-                        match WatchedEvent::read_from(&mut data) {
-                            Ok(mut event) => {
-                                self.cut_chroot(&mut event);
-                                self.dispatch(&event);
-                            }
-                            Err(e) => error!("Failed to parse WatchedEvent {:?}", e),
+                    0 => match WatchedEvent::read_from(&mut data) {
+                        Ok(mut event) => {
+                            self.cut_chroot(&mut event);
+                            self.dispatch(&event);
                         }
-                    }
+                        Err(e) => error!("Failed to parse WatchedEvent {:?}", e),
+                    },
                     e => error!("WatchedEvent.error {:?}", e),
                 }
             }
             WatchMessage::Watch(watch) => {
-                self.watches.entry(watch.path.clone()).or_insert(vec![]).push(watch);
+                self.watches
+                    .entry(watch.path.clone())
+                    .or_insert(vec![])
+                    .push(watch);
             }
         }
     }
@@ -141,17 +152,17 @@ impl<W: Watcher> ZkWatch<W> {
         if let Some(ref path) = event.path {
             match self.watches.remove(path) {
                 Some(watches) => {
-
-                    let (matching, left): (_, Vec<Watch>) = watches.into_iter().partition(|w| {
-                        match event.event_type {
-                            WatchedEventType::NodeChildrenChanged => w.watch_type == WatchType::Child,
+                    let (matching, left): (_, Vec<Watch>) =
+                        watches.into_iter().partition(|w| match event.event_type {
+                            WatchedEventType::NodeChildrenChanged => {
+                                w.watch_type == WatchType::Child
+                            }
                             WatchedEventType::NodeCreated | WatchedEventType::NodeDataChanged => {
                                 w.watch_type == WatchType::Data || w.watch_type == WatchType::Exist
                             }
                             WatchedEventType::NodeDeleted => true,
                             _ => false,
-                        }
-                    });
+                        });
 
                     // put back the remaining watches
                     if !left.is_empty() {

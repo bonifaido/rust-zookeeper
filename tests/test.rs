@@ -12,12 +12,13 @@ pub struct ZkCluster {
 impl ZkCluster {
     pub fn start(instances: usize) -> ZkCluster {
         let mut process = match Command::new("java")
-                                    .arg("-jar")
-                                    .arg("zk-test-cluster/target/main.jar")
-                                    .arg(instances.to_string())
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::piped())
-                                    .spawn() {
+            .arg("-jar")
+            .arg("zk-test-cluster/target/main.jar")
+            .arg(instances.to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+        {
             Ok(p) => p,
             Err(e) => panic!("failed to start ZkCluster: {}", e),
         };

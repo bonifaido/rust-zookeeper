@@ -2,11 +2,11 @@ mod test;
 
 use std::iter::once;
 use std::time::Duration;
-use zookeeper::{ZooKeeper, WatchedEvent, ZooKeeperExt, ZkError};
 use test::ZkCluster;
+use zookeeper::{WatchedEvent, ZkError, ZooKeeper, ZooKeeperExt};
 
-#[test]
-fn get_children_recursive_test() {
+#[tokio::test]
+async fn get_children_recursive_test() {
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -15,7 +15,9 @@ fn get_children_recursive_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+    )
+    .await
+    .unwrap();
 
     let tree = vec![
         "/root/a/1",
@@ -30,12 +32,13 @@ fn get_children_recursive_test() {
     ];
 
     for path in tree.iter() {
-        zk.ensure_path(path).unwrap();
+        zk.ensure_path(path).await.unwrap();
     }
 
-    let children = zk.get_children_recursive("/root").unwrap();
+    let children = zk.get_children_recursive("/root").await.unwrap();
     for path in tree {
-        for (i, _) in path.chars()
+        for (i, _) in path
+            .chars()
             .chain(once('/'))
             .enumerate()
             .skip(1)
@@ -46,8 +49,8 @@ fn get_children_recursive_test() {
     }
 }
 
-#[test]
-fn get_children_recursive_invalid_path_test() {
+#[tokio::test]
+async fn get_children_recursive_invalid_path_test() {
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -56,14 +59,16 @@ fn get_children_recursive_invalid_path_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+    )
+    .await
+    .unwrap();
 
-    let result = zk.get_children_recursive("/bad");
+    let result = zk.get_children_recursive("/bad").await;
     assert_eq!(result, Err(ZkError::NoNode))
 }
 
-#[test]
-fn get_children_recursive_only_root_test() {
+#[tokio::test]
+async fn get_children_recursive_only_root_test() {
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -72,16 +77,18 @@ fn get_children_recursive_only_root_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+    )
+    .await
+    .unwrap();
 
     let root = "/root";
-    zk.ensure_path(root).unwrap();
-    let result = zk.get_children_recursive(root).unwrap();
+    zk.ensure_path(root).await.unwrap();
+    let result = zk.get_children_recursive(root).await.unwrap();
     assert_eq!(result, vec![root]);
 }
 
-#[test]
-fn delete_recursive_test() {
+#[tokio::test]
+async fn delete_recursive_test() {
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -90,7 +97,9 @@ fn delete_recursive_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+    )
+    .await
+    .unwrap();
 
     let tree = vec![
         "/root/a/1",
@@ -105,16 +114,18 @@ fn delete_recursive_test() {
     ];
 
     for path in tree.iter() {
-        zk.ensure_path(path).unwrap();
+        zk.ensure_path(path).await.unwrap();
     }
 
-    zk.delete_recursive("/root/a").unwrap();
-    assert!(zk.exists("/root/a", false).unwrap().is_none());
-    assert!(zk.exists("/root/b", false).unwrap().is_some());
+    zk.delete_recursive("/root/a").await.unwrap();
+    assert!(zk.exists("/root/a", false).await.unwrap().is_none());
+    assert!(zk.exists("/root/b", false).await.unwrap().is_some());
+
+    zk.close().await.unwrap();
 }
 
-#[test]
-fn delete_recursive_invalid_path_test() {
+#[tokio::test]
+async fn delete_recursive_invalid_path_test() {
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -123,8 +134,12 @@ fn delete_recursive_invalid_path_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+    )
+    .await
+    .unwrap();
 
-    let result = zk.delete_recursive("/bad");
-    assert_eq!(result, Err(ZkError::NoNode))
+    let result = zk.delete_recursive("/bad").await;
+    assert_eq!(result, Err(ZkError::NoNode));
+
+    zk.close().await.unwrap();
 }

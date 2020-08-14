@@ -1,33 +1,33 @@
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{Buf, Bytes, BytesMut};
-use mio::net::TcpStream;
-use mio::*;
-use mio_extras::channel::{Sender, Receiver, channel};
-use mio_extras::timer::{Timer, Timeout};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use futures::future::{abortable, AbortHandle};
+use lazy_static::lazy_static;
+use log::*;
 use std::collections::VecDeque;
-use std::io;
-use std::io::{Cursor, ErrorKind};
+use std::io::Cursor;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use std::sync::mpsc;
-use std::mem;
-use log::*;
-use lazy_static::lazy_static;
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::net::TcpStream;
+use tokio::prelude::*;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::time::delay_for;
 
-const ZK: Token = Token(1);
-const TIMER: Token = Token(2);
-const CHANNEL: Token = Token(3);
-
-use crate::{ZkState, ZkError};
-use crate::zookeeper::{RawRequest, RawResponse};
-use crate::watch::WatchMessage;
 use crate::listeners::ListenerSet;
-use crate::proto::{ConnectResponse, ReplyHeader, ReadFrom, OpCode, ConnectRequest, WriteTo, ByteBuf, RequestHeader};
-use crate::try_io::{TryWrite, TryRead};
+use crate::proto::{
+    ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader, WriteTo,
+};
+use crate::watch::WatchMessage;
+use crate::zookeeper::{RawRequest, RawResponse};
+use crate::{ZkError, ZkState};
 
 lazy_static! {
-    static ref PING: ByteBuf =
-    RequestHeader{xid: -2, opcode: OpCode::Ping}.to_len_prefixed_buf().unwrap();
+    static ref PING: ByteBuf = RequestHeader {
+        xid: -2,
+        opcode: OpCode::Ping
+    }
+    .to_len_prefixed_buf()
+    .unwrap();
 }
 
 struct Hosts {
@@ -35,17 +35,9 @@ struct Hosts {
     index: usize,
 }
 
-#[inline]
-fn pollopt() -> PollOpt {
-    PollOpt::edge() | PollOpt::oneshot()
-}
-
 impl Hosts {
     fn new(addrs: Vec<SocketAddr>) -> Hosts {
-        Hosts {
-            addrs,
-            index: 0,
-        }
+        Hosts { addrs, index: 0 }
     }
 
     fn get(&mut self) -> &SocketAddr {
@@ -59,14 +51,10 @@ impl Hosts {
     }
 }
 
-#[derive(Clone, Debug)]
-enum ZkTimeout {
-    Ping,
-    Connect,
-}
+type Timeout = AbortHandle;
 
 pub struct ZkIo {
-    sock: TcpStream,
+    sock_tx: Option<OwnedWriteHalf>,
     state: ZkState,
     hosts: Hosts,
     buffer: VecDeque<RawRequest>,
@@ -74,35 +62,48 @@ pub struct ZkIo {
     response: BytesMut,
     ping_timeout: Option<Timeout>,
     conn_timeout: Option<Timeout>,
-    timer: Timer<ZkTimeout>,
     timeout_ms: u64,
     ping_timeout_duration: Duration,
     conn_timeout_duration: Duration,
-    watch_sender: mpsc::Sender<WatchMessage>,
+    watch_sender: Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
     ping_sent: Instant,
     state_listeners: ListenerSet<ZkState>,
-    poll: Poll,
     shutdown: bool,
     tx: Sender<RawRequest>,
     rx: Receiver<RawRequest>,
+    ping_tx: Sender<()>,
+    ping_rx: Receiver<()>,
+    connect_tx: Sender<()>,
+    connect_rx: Receiver<()>,
+    data_tx: Sender<BytesMut>,
+    data_rx: Receiver<BytesMut>,
+}
+
+#[derive(Clone, Debug)]
+enum ZkTimeout {
+    Ping,
+    Connect,
 }
 
 impl ZkIo {
-    pub fn new(
+    pub async fn new(
         addrs: Vec<SocketAddr>,
         ping_timeout_duration: Duration,
-        watch_sender: mpsc::Sender<WatchMessage>,
-        state_listeners: ListenerSet<ZkState>
+        watch_sender: Sender<WatchMessage>,
+        state_listeners: ListenerSet<ZkState>,
     ) -> ZkIo {
         trace!("ZkIo::new");
-        let timeout_ms = ping_timeout_duration.as_secs() * 1000 +
-            ping_timeout_duration.subsec_nanos() as u64 / 1000000;
-        let (tx, rx) = channel();
+        let timeout_ms = ping_timeout_duration.as_secs() * 1000
+            + ping_timeout_duration.subsec_nanos() as u64 / 1000000;
+        let (tx, rx) = channel(64);
+        let (ping_tx, ping_rx) = channel(1);
+        let (connect_tx, connect_rx) = channel(1);
+        let (data_tx, data_rx) = channel(64);
 
         let mut zkio = ZkIo {
-            sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
+            sock_tx: None,
             state: ZkState::Connecting,
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
@@ -119,25 +120,20 @@ impl ZkIo {
             conn_resp: ConnectResponse::initial(timeout_ms),
             zxid: 0,
             ping_sent: Instant::now(),
-            state_listeners: state_listeners,
-            // TODO add error handling to this method in subsequent commit.
-            // There's already another unwrap which needs to be addressed.
-            poll: Poll::new().unwrap(),
+            state_listeners,
             shutdown: false,
-            timer: Timer::default(),
             tx,
             rx,
+            ping_tx,
+            ping_rx,
+            connect_tx,
+            connect_rx,
+            data_tx,
+            data_rx,
         };
 
-        let request = zkio.connect_request();
-        zkio.buffer.push_back(request);
+        zkio.reconnect().await;
         zkio
-    }
-
-    fn reregister(&mut self, interest: Ready) {
-        self.poll
-            .reregister(&self.sock, ZK, interest, pollopt())
-            .expect("Failed to register ZK handle");
     }
 
     fn notify_state(&self, old_state: ZkState, new_state: ZkState) {
@@ -146,7 +142,7 @@ impl ZkIo {
         }
     }
 
-    fn handle_response(&mut self) {
+    async fn handle_response(&mut self) {
         loop {
             if self.response.len() <= 4 {
                 return;
@@ -154,21 +150,25 @@ impl ZkIo {
 
             let len = BigEndian::read_i32(&self.response[..4]) as usize;
 
-            trace!("Response chunk len = {} buf len is {}", len, self.response.len());
+            trace!(
+                "Response chunk len = {} buf len is {}",
+                len,
+                self.response.len()
+            );
 
             if self.response.len() - 4 < len {
                 return;
             } else {
                 self.response.advance(4);
                 let bytes = self.response.split_to(len);
-                self.handle_chunk(bytes.freeze());
+                self.handle_chunk(bytes.freeze()).await;
 
                 self.response.reserve(1024 * 1024 * 2);
             }
         }
     }
 
-    fn handle_chunk(&mut self, bytes: Bytes) {
+    async fn handle_chunk(&mut self, bytes: Bytes) {
         let len = bytes.len();
         trace!("handle_response in {:?} state [{}]", self.state, len);
 
@@ -194,27 +194,21 @@ impl ZkIo {
             match response.header.xid {
                 -1 => {
                     trace!("handle_response Got a watch event!");
-                    self.watch_sender.send(WatchMessage::Event(response)).unwrap();
+                    self.watch_sender
+                        .send(WatchMessage::Event(response))
+                        .await
+                        .unwrap();
                 }
                 -2 => {
-                    trace!("Got ping response in {:?}",
-                           self.ping_sent.elapsed());
+                    trace!("Got ping response in {:?}", self.ping_sent.elapsed());
                     self.inflight.pop_front();
                 }
-                _ => {
-                    match self.inflight.pop_front() {
-                        Some(request) => {
-                            if request.opcode == OpCode::CloseSession {
-                                let old_state = self.state;
-                                self.state = ZkState::Closed;
-                                self.notify_state(old_state, self.state);
-                                self.shutdown = true;
-                            }
-                            self.send_response(request, response);
-                        }
-                        None => panic!("Shouldn't happen, no inflight request"),
+                _ => match self.inflight.pop_front() {
+                    Some(request) => {
+                        self.send_response(request, response).await;
                     }
-                }
+                    None => panic!("Shouldn't happen, no inflight request"),
+                },
             }
         } else {
             self.inflight.pop_front(); // drop the connect request
@@ -251,31 +245,31 @@ impl ZkIo {
         }
     }
 
-    fn send_response(&self, request: RawRequest, response: RawResponse) {
+    async fn send_response(&mut self, request: RawRequest, response: RawResponse) {
         match request.listener {
-            Some(ref listener) => {
+            Some(listener) => {
                 trace!("send_response Opcode is {:?}", request.opcode);
                 listener.send(response).unwrap();
             }
             None => info!("Nobody is interested in response {:?}", request.opcode),
         }
         if let Some(watch) = request.watch {
-            self.watch_sender.send(WatchMessage::Watch(watch)).unwrap();
+            self.watch_sender
+                .send(WatchMessage::Watch(watch))
+                .await
+                .unwrap();
         }
     }
 
     fn clear_timeout(&mut self, atype: ZkTimeout) {
+        trace!("clear_timeout: {:?}", atype);
         let timeout = match atype {
-            ZkTimeout::Ping => {
-                mem::replace(&mut self.ping_timeout , None)
-            },
-            ZkTimeout::Connect => {
-                mem::replace(&mut self.conn_timeout , None)
-            },
+            ZkTimeout::Ping => self.ping_timeout.take(),
+            ZkTimeout::Connect => self.conn_timeout.take(),
         };
-        if let Some(timeout) = timeout {
-            trace!("clear_timeout: {:?}", atype);
-            self.timer.cancel_timeout(&timeout);
+
+        if let Some(timeout) = &timeout {
+            timeout.abort();
         }
     }
 
@@ -285,18 +279,32 @@ impl ZkIo {
         match atype {
             ZkTimeout::Ping => {
                 let duration = self.ping_timeout_duration.clone();
-                self.ping_timeout = Some(self.timer.set_timeout(duration, atype));
-            },
+                let (future, handle) = abortable(delay_for(duration));
+                self.ping_timeout = Some(handle);
+
+                let mut tx = self.ping_tx.clone();
+                tokio::spawn(async move {
+                    if future.await.is_ok() {
+                        let _ = tx.send(()).await;
+                    }
+                });
+            }
             ZkTimeout::Connect => {
                 let duration = self.conn_timeout_duration.clone();
-                self.conn_timeout = Some(self.timer.set_timeout(duration, atype));
-            },
+                let (future, handle) = abortable(delay_for(duration));
+                self.conn_timeout = Some(handle);
+
+                let mut tx = self.connect_tx.clone();
+                tokio::spawn(async move {
+                    if future.await.is_ok() {
+                        let _ = tx.send(()).await;
+                    }
+                });
+            }
         }
-        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Reregister TIMER");
     }
 
-    fn reconnect(&mut self) {
+    async fn reconnect(&mut self) {
         trace!("reconnect");
         let old_state = self.state;
         self.state = ZkState::Connecting;
@@ -321,10 +329,11 @@ impl ZkIo {
 
             self.clear_timeout(ZkTimeout::Ping);
             self.clear_timeout(ZkTimeout::Connect);
+
             {
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
-                self.sock = match TcpStream::connect(host) {
+                let sock = match TcpStream::connect(host).await {
                     Ok(sock) => sock,
                     Err(e) => {
                         error!("Failed to connect {:?}: {:?}", host, e);
@@ -332,17 +341,35 @@ impl ZkIo {
                     }
                 };
                 info!("Started connecting to {:?}", host);
+
+                let (mut rx, tx) = sock.into_split();
+                self.sock_tx = Some(tx);
+
+                let mut data_tx = self.data_tx.clone();
+                tokio::spawn(async move {
+                    let mut buf = BytesMut::with_capacity(4096);
+                    while let Ok(read) = rx.read_buf(&mut buf).await {
+                        trace!("Received {:?} bytes", read);
+                        if data_tx.send(buf).await.is_err() {
+                            return;
+                        }
+
+                        if read == 0 {
+                            break;
+                        }
+
+                        buf = BytesMut::with_capacity(4096);
+                    }
+
+                    trace!("Exiting read loop");
+                    let _ = data_tx.send(BytesMut::new());
+                });
             }
-            self.start_timeout(ZkTimeout::Connect);
 
             let request = self.connect_request();
             self.buffer.push_back(request);
 
-
-            // Register the new socket
-            let pollopt = PollOpt::edge() | PollOpt::oneshot();
-            self.poll.register(&self.sock, ZK, Ready::all(), pollopt)
-                .expect("Register ZK");
+            self.start_timeout(ZkTimeout::Connect);
 
             break;
         }
@@ -359,118 +386,49 @@ impl ZkIo {
         }
     }
 
-    fn ready(&mut self, token: Token, ready: Ready) {
-        trace!("event token={:?} ready={:?}", token, ready);
+    async fn write_data(&mut self) {
+        if let Some(tx) = self.sock_tx.as_mut() {
+            while let Some(request) = self.buffer.pop_front() {
+                trace!("Writing data: {:?}", request.opcode);
+                match tx.write_all(request.data.bytes()).await {
+                    Ok(()) => {
+                        if request.opcode == OpCode::CloseSession {
+                            let old_state = self.state;
+                            self.state = ZkState::Closed;
+                            self.notify_state(old_state, self.state);
+                            self.shutdown = true;
 
-        match token {
-            ZK => self.ready_zk(ready),
-            TIMER => self.ready_timer(ready),
-            CHANNEL => self.ready_channel(ready),
-            _ => unreachable!(),
-        }
-    }
+                            // closing session translates to empty response
+                            self.send_response(
+                                request,
+                                RawResponse {
+                                    header: ReplyHeader {
+                                        xid: 0,
+                                        zxid: 0,
+                                        err: 0,
+                                    },
+                                    data: Default::default(),
+                                },
+                            )
+                            .await;
+                            break;
+                        }
 
-    fn ready_zk(&mut self, ready: Ready) {
-        self.clear_timeout(ZkTimeout::Ping);
-
-        if ready.is_writable() {
-            while let Some(mut request) = self.buffer.pop_front() {
-                match self.sock.try_write_buf(&mut request.data) {
-                    Ok(Some(0)) => {
-                        warn!("Connection closed: write");
-                        self.reconnect();
+                        self.inflight.push_back(request);
+                    }
+                    Err(e) => {
+                        error!("Failed to write socket: {:?}", e);
+                        self.reconnect().await;
                         return;
                     }
-                    Ok(Some(written)) => {
-                        trace!("Written {:?} bytes", written);
-                        if request.data.has_remaining() {
-                            self.buffer.push_front(request);
-                            break;
-                        } else {
-                            self.inflight.push_back(request);
-                        }
-                    }
-                    Ok(None) => trace!("Spurious write"),
-                    Err(e) => {
-                        match e.kind() {
-                            ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
-                            _ => {
-                                error!("Failed to write socket: {:?}", e);
-                                self.reconnect();
-                                return;
-                            }
-                        }
-                    }
                 }
             }
         }
-
-        if ready.is_readable() {
-            match self.sock.try_read_buf(&mut self.response) {
-                Ok(Some(0)) => {
-                    warn!("Connection closed: read");
-                    self.reconnect();
-                    return;
-                }
-                Ok(Some(read)) => {
-                    trace!("Read {:?} bytes", read);
-                    self.handle_response();
-                }
-                Ok(None) => trace!("Spurious read"),
-                Err(e) => {
-                    match e.kind() {
-                        ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
-                        _ => {
-                            error!("Failed to read socket: {:?}", e);
-                            self.reconnect();
-                            return;
-                        }
-                    }
-                }
-            }
-
-        }
-
-        if (ready.is_hup()) && (self.state != ZkState::Closed) {
-            // If we were connected
-            // fn send_watched_event(keeper_state: KeeperState) {
-            //     match sender.send(WatchedEvent{event_type: WatchedEventType::None,
-            //                                    keeper_state: keeper_state,
-            //                                    path: None}) {
-            //         Ok(()) => (),
-            //         Err(e) => panic!("Reader/Writer: Event died {}", e)
-            //     }
-            // }
-            let old_state = self.state;
-            self.state = ZkState::NotConnected;
-            self.notify_state(old_state, self.state);
-
-            info!("Reconnect due to HUP");
-            self.reconnect();
-        }
-
-        if self.is_idle() {
-            self.start_timeout(ZkTimeout::Ping);
-        }
-
-        // Not sure that we need to write, but we always need to read, because of watches
-        // If the output buffer has no content, we don't need to write again
-        let mut interest = Ready::all();
-        if self.buffer.is_empty() {
-            interest.remove(Ready::writable());
-        }
-
-        // This tick is done, subscribe to a forthcoming one
-        self.reregister(interest);
     }
 
-    fn is_idle(&self) -> bool {
-        self.inflight.is_empty() && self.buffer.is_empty()
-    }
-
-    fn ready_channel(&mut self, _: Ready) {
+    async fn read_channel(&mut self) {
         while let Ok(request) = self.rx.try_recv() {
-            trace!("ready_channel {:?}", request.opcode);
+            trace!("read_channel {:?}", request.opcode);
 
             match self.state {
                 ZkState::Closed => {
@@ -484,57 +442,60 @@ impl ZkIo {
                         header,
                         data: ByteBuf::new(vec![]),
                     };
-                    self.send_response(request, response);
-                },
+                    self.send_response(request, response).await;
+                }
                 _ => {
                     // Otherwise, queue request for processing.
-                    if self.buffer.is_empty() {
-                        self.reregister(Ready::all());
-                    }
                     self.buffer.push_back(request);
-                },
+                }
             }
         }
 
-        self.poll.reregister(&self.rx, CHANNEL, Ready::readable(), pollopt())
-            .expect("Reregister CHANNEL");
-    }
+        while self.ping_rx.try_recv().is_ok() {
+            self.ping_timeout = None;
 
-    fn ready_timer(&mut self, _: Ready) {
-        trace!("ready_timer thread={:?}", ::std::thread::current().id());
+            if self.inflight.is_empty() {
+                // No inflight request indicates an idle connection. Send a ping.
+                trace!("Pinging");
+                self.tx
+                    .send(RawRequest {
+                        opcode: OpCode::Ping,
+                        data: PING.clone(),
+                        listener: None,
+                        watch: None,
+                    })
+                    .await
+                    .unwrap();
+                self.ping_sent = Instant::now();
+            }
+        }
 
-        loop {
-            match self.timer.poll() {
-                Some(ZkTimeout::Ping) => {
-                    trace!("handle ping timeout");
-                    self.clear_timeout(ZkTimeout::Ping);
-                    if self.inflight.is_empty() {
-                        // No inflight request indicates an idle connection. Send a ping.
-                        trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
-                        self.tx.send(RawRequest {
-                            opcode: OpCode::Ping,
-                            data: PING.clone(),
-                            listener: None,
-                            watch: None,
-                        }).unwrap();
-                        self.ping_sent = Instant::now();
+        while self.connect_rx.try_recv().is_ok() {
+            self.conn_timeout = None;
+
+            if self.state == ZkState::Connecting {
+                info!("Reconnect due to connection timeout");
+                self.reconnect().await;
+            } else {
+                self.start_timeout(ZkTimeout::Ping);
+            }
+        }
+
+        while let Ok(data) = self.data_rx.try_recv() {
+            let read = data.len();
+            trace!("Read {:?} bytes", read);
+
+            match read {
+                0 => {
+                    warn!("Connection closed: read");
+
+                    if self.state == ZkState::Closed {
+                        self.reconnect().await;
                     }
-                },
-                Some(ZkTimeout::Connect) => {
-                    trace!("handle connection timeout");
-                    self.clear_timeout(ZkTimeout::Connect);
-                    if self.state == ZkState::Connecting {
-                        info!("Reconnect due to connection timeout");
-                        self.reconnect();
-                    }
-                },
-                None => {
-                    if self.ping_timeout.is_some() || self.conn_timeout.is_some() {
-                        trace!("Spurious timer");
-                        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
-                            .expect("Reregister TIMER");
-                    }
-                    break;
+                }
+                _ => {
+                    self.response.put(data);
+                    self.handle_response().await;
                 }
             }
         }
@@ -544,32 +505,13 @@ impl ZkIo {
         self.tx.clone()
     }
 
-    pub fn run(mut self) -> io::Result<()> {
-        let mut events = Events::with_capacity(128);
+    pub async fn run(mut self) {
+        while !self.shutdown {
+            self.write_data().await;
+            self.read_channel().await;
 
-        // Register Initial Interest
-        self.poll.register(&self.sock, ZK, Ready::all(), pollopt())
-            .expect("Register ZK");
-        self.poll.register(&self.timer, TIMER, Ready::readable(), pollopt())
-            .expect("Register TIMER");
-        self.poll.register(&self.rx, CHANNEL, Ready::readable(), pollopt())
-            .expect("Register CHANNEL");
-
-        loop {
-            // Handle loop shutdown
-            if self.shutdown {
-                break;
-            }
-
-            // Wait for events
-            self.poll.poll(&mut events, None)?;
-
-            // Process events
-            for event in &events {
-                self.ready(event.token(), event.readiness());
-            }
+            // if no event happened, yield to allow other tasks to run
+            tokio::task::yield_now().await;
         }
-
-        Ok(())
     }
 }

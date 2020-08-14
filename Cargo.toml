@@ -12,12 +12,13 @@ keywords = ["zk", "zookeeper", "distributed", "coordination"]
 edition = "2018"
 
 [dependencies]
+async-trait = "0.1"
 byteorder = "1.2"
 bytes = "0.5"
+futures = "0.3"
 lazy_static = "1.0"
 log = "0.4"
-mio = "0.6"
-mio-extras = "2"
+tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io-util", "macros"] }
 snowflake = "1.0.0"
 zookeeper_derive = { path = "zookeeper-derive", version = "0.4.1" }
 
