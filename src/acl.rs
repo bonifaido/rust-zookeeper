@@ -3,6 +3,8 @@ use std::ops;
 
 use std::string::ToString;
 
+use lazy_static::lazy_static;
+
 /// Describes the ability of a user to perform a certain action.
 ///
 /// Permissions can be mixed together like integers with `|` and `&`.

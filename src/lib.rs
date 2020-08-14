@@ -1,25 +1,4 @@
 #![allow(deprecated)] // XXX temporary to silence expected warnings
-#![deny(unused_mut)]
-extern crate byteorder;
-extern crate bytes;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-extern crate mio;
-extern crate mio_extras;
-extern crate snowflake;
-#[macro_use]
-extern crate zookeeper_derive;
-
-pub use acl::*;
-pub use consts::*;
-pub use data::*;
-pub use zookeeper::{ZkResult, ZooKeeper};
-pub use zookeeper_ext::ZooKeeperExt;
-pub use watch::{Watch, WatchedEvent, Watcher, WatchType};
-
-pub use listeners::Subscription;
 
 mod acl;
 mod consts;
@@ -28,8 +7,16 @@ mod io;
 mod listeners;
 mod paths;
 mod proto;
+pub mod recipes;
 mod watch;
 mod zookeeper;
 mod zookeeper_ext;
-mod try_io;
-pub mod recipes;
+
+pub use self::zookeeper::{ZkResult, ZooKeeper};
+pub use acl::*;
+pub use consts::*;
+pub use data::*;
+pub use watch::{Watch, WatchType, WatchedEvent, Watcher};
+pub use zookeeper_ext::ZooKeeperExt;
+
+pub use listeners::Subscription;
