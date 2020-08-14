@@ -475,8 +475,6 @@ impl ZkIo {
             if self.state == ZkState::Connecting {
                 info!("Reconnect due to connection timeout");
                 self.reconnect().await;
-            } else {
-                self.start_timeout(ZkTimeout::Ping);
             }
         }
 
@@ -498,6 +496,14 @@ impl ZkIo {
                 }
             }
         }
+
+        if self.is_idle() {
+            self.start_timeout(ZkTimeout::Ping);
+        }
+    }
+
+    fn is_idle(&self) -> bool {
+        self.inflight.is_empty() && self.buffer.is_empty() && self.ping_timeout.is_none()
     }
 
     pub fn sender(&self) -> Sender<RawRequest> {
