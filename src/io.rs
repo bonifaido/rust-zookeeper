@@ -320,11 +320,8 @@ impl ZkIo {
 
             // Check if the session is still alive according to our knowledge
             if self.ping_sent.elapsed().as_secs() * 1000 > self.timeout_ms {
-                warn!("Zk session timeout, closing io event loop");
-                self.state = ZkState::Closed;
-                self.notify_state(ZkState::Connecting, self.state);
-                self.shutdown = true;
-                break;
+                warn!("Zk session timeout");
+                self.zxid = 0;
             }
 
             self.clear_timeout(ZkTimeout::Ping);
