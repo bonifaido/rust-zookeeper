@@ -1,3 +1,5 @@
+# zookeeper-async
+
 [![Version](https://img.shields.io/crates/v/zookeeper-async.svg)](https://crates.io/crates/zookeeper-async)
 
 Async Zookeeper client written 100% in Rust, based on tokio.

@@ -72,13 +72,13 @@ pub struct ZkIo {
     state_listeners: ListenerSet<ZkState>,
     shutdown: bool,
     tx: Sender<RawRequest>,
-    rx: Receiver<RawRequest>,
+    rx: Option<Receiver<RawRequest>>,
     ping_tx: Sender<()>,
-    ping_rx: Receiver<()>,
+    ping_rx: Option<Receiver<()>>,
     connect_tx: Sender<()>,
-    connect_rx: Receiver<()>,
+    connect_rx: Option<Receiver<()>>,
     data_tx: Sender<BytesMut>,
-    data_rx: Receiver<BytesMut>,
+    data_rx: Option<Receiver<BytesMut>>,
 }
 
 #[derive(Clone, Debug)]
@@ -123,13 +123,13 @@ impl ZkIo {
             state_listeners,
             shutdown: false,
             tx,
-            rx,
+            rx: Some(rx),
             ping_tx,
-            ping_rx,
+            ping_rx: Some(ping_rx),
             connect_tx,
-            connect_rx,
+            connect_rx: Some(connect_rx),
             data_tx,
-            data_rx,
+            data_rx: Some(data_rx),
         };
 
         zkio.reconnect().await;
@@ -425,83 +425,6 @@ impl ZkIo {
         }
     }
 
-    async fn read_channel(&mut self) {
-        while let Ok(request) = self.rx.try_recv() {
-            trace!("read_channel {:?}", request.opcode);
-
-            match self.state {
-                ZkState::Closed => {
-                    // If zk is unavailable, respond with a ConnectionLoss error.
-                    let header = ReplyHeader {
-                        xid: 0,
-                        zxid: 0,
-                        err: ZkError::ConnectionLoss as i32,
-                    };
-                    let response = RawResponse {
-                        header,
-                        data: ByteBuf::new(vec![]),
-                    };
-                    self.send_response(request, response).await;
-                }
-                _ => {
-                    // Otherwise, queue request for processing.
-                    self.buffer.push_back(request);
-                }
-            }
-        }
-
-        while self.ping_rx.try_recv().is_ok() {
-            self.ping_timeout = None;
-
-            if self.inflight.is_empty() {
-                // No inflight request indicates an idle connection. Send a ping.
-                trace!("Pinging");
-                self.tx
-                    .send(RawRequest {
-                        opcode: OpCode::Ping,
-                        data: PING.clone(),
-                        listener: None,
-                        watch: None,
-                    })
-                    .await
-                    .unwrap();
-                self.ping_sent = Instant::now();
-            }
-        }
-
-        while self.connect_rx.try_recv().is_ok() {
-            self.conn_timeout = None;
-
-            if self.state == ZkState::Connecting {
-                info!("Reconnect due to connection timeout");
-                self.reconnect().await;
-            }
-        }
-
-        while let Ok(data) = self.data_rx.try_recv() {
-            let read = data.len();
-            trace!("Read {:?} bytes", read);
-
-            match read {
-                0 => {
-                    warn!("Connection closed: read");
-
-                    if self.state != ZkState::Closed {
-                        self.reconnect().await;
-                    }
-                }
-                _ => {
-                    self.response.put(data);
-                    self.handle_response().await;
-                }
-            }
-        }
-
-        if self.is_idle() {
-            self.start_timeout(ZkTimeout::Ping);
-        }
-    }
-
     fn is_idle(&self) -> bool {
         self.inflight.is_empty() && self.buffer.is_empty() && self.ping_timeout.is_none()
     }
@@ -511,12 +434,90 @@ impl ZkIo {
     }
 
     pub async fn run(mut self) {
+        let mut rx = self.rx.take().expect("Missing request receiver!");
+        let mut ping_rx = self.ping_rx.take().expect("Missing ping receiver!");
+        let mut connect_rx = self.connect_rx.take().expect("Missing connect receiver!");
+        let mut data_rx = self.data_rx.take().expect("Missing data receiver!");
+
         while !self.shutdown {
             self.write_data().await;
-            self.read_channel().await;
+            if self.shutdown {
+                break;
+            }
 
-            // if no event happened, yield to allow other tasks to run
-            tokio::task::yield_now().await;
+            tokio::select! {
+                request = rx.recv() => if let Some(request) = request {
+                    trace!("read_channel {:?}", request.opcode);
+
+                    match self.state {
+                        ZkState::Closed => {
+                            // If zk is unavailable, respond with a ConnectionLoss error.
+                            let header = ReplyHeader {
+                                xid: 0,
+                                zxid: 0,
+                                err: ZkError::ConnectionLoss as i32,
+                            };
+                            let response = RawResponse {
+                                header,
+                                data: ByteBuf::new(vec![]),
+                            };
+                            self.send_response(request, response).await;
+                        }
+                        _ => {
+                            // Otherwise, queue request for processing.
+                            self.buffer.push_back(request);
+                        }
+                    }
+                },
+                _ = ping_rx.recv() => {
+                    self.ping_timeout = None;
+
+                    if self.inflight.is_empty() {
+                        // No inflight request indicates an idle connection. Send a ping.
+                        trace!("Pinging");
+                        self.tx
+                            .send(RawRequest {
+                                opcode: OpCode::Ping,
+                                data: PING.clone(),
+                                listener: None,
+                                watch: None,
+                            })
+                            .await
+                            .unwrap();
+                        self.ping_sent = Instant::now();
+                    }
+                },
+                _ = connect_rx.recv() => {
+                    self.conn_timeout = None;
+
+                    if self.state == ZkState::Connecting {
+                        info!("Reconnect due to connection timeout");
+                        self.reconnect().await;
+                    }
+                },
+                data = data_rx.recv() => if let Some(data) = data {
+                    let read = data.len();
+                    trace!("Read {:?} bytes", read);
+
+                    match read {
+                        0 => {
+                            warn!("Connection closed: read");
+
+                            if self.state != ZkState::Closed {
+                                self.reconnect().await;
+                            }
+                        }
+                        _ => {
+                            self.response.put(data);
+                            self.handle_response().await;
+                        }
+                    }
+                }
+            }
+
+            if self.is_idle() {
+                self.start_timeout(ZkTimeout::Ping);
+            }
         }
     }
 }
