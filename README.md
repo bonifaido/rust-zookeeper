@@ -15,7 +15,6 @@ Check the [examples][examples] directory
 Also if you find a bug or would like to see a feature implemented please raise an issue or send a pull-request.
 
 ## Documentation
-Documentation is available on the [gh-pages][doc] branch.
 
 [examples]: https://github.com/krojew/rust-zookeeper/tree/master/examples
 [javadoc]: https://zookeeper.apache.org/doc/r3.4.6/api/org/apache/zookeeper/ZooKeeper.html
