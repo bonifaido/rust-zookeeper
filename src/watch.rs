@@ -39,7 +39,7 @@ pub struct Watch {
     /// The type of changes this watch is looking for.
     pub watch_type: WatchType,
     /// The handler for this watch, to call when it is triggered.
-    pub watcher: Box<dyn Watcher>,
+    pub watcher: Box<dyn FnOnce(WatchedEvent) + Send>,
 }
 
 impl Debug for Watch {
@@ -141,7 +141,7 @@ impl<W: Watcher> ZkWatch<W> {
         debug!("{:?}", event);
         if let Some(watches) = self.find_watches(&event) {
             for watch in watches.into_iter() {
-                watch.watcher.handle(event.clone())
+                (watch.watcher)(event.clone())
             }
         } else {
             self.watcher.handle(event.clone())

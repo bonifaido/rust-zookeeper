@@ -20,7 +20,9 @@ use crate::proto::{
     WriteTo,
 };
 use crate::watch::ZkWatch;
-use crate::{Acl, CreateMode, Stat, Subscription, Watch, WatchType, Watcher, ZkError, ZkState};
+use crate::{
+    Acl, CreateMode, Stat, Subscription, Watch, WatchType, WatchedEvent, Watcher, ZkError, ZkState,
+};
 
 /// Value returned from potentially-error operations.
 pub type ZkResult<T> = result::Result<T, ZkError>;
@@ -303,9 +305,9 @@ impl ZooKeeper {
 
     /// Return the `Stat` of the node of the given `path` or `None` if no such node exists.
     ///
-    /// Similar to `exists`, but sets an explicit `Watcher` instead of relying on the client's base
+    /// Similar to `exists`, but sets an explicit watcher instead of relying on the client's base
     /// `Watcher`.
-    pub async fn exists_w<W: Watcher + 'static>(
+    pub async fn exists_w<W: FnOnce(WatchedEvent) + Send + 'static>(
         &self,
         path: &str,
         watcher: W,
@@ -397,9 +399,9 @@ impl ZooKeeper {
 
     /// Return the list of the children of the node of the given `path`.
     ///
-    /// Similar to `get_children`, but sets an explicit `Watcher` instead of relying on the client's
+    /// Similar to `get_children`, but sets an explicit watcher instead of relying on the client's
     /// base `Watcher`.
-    pub async fn get_children_w<W: Watcher + 'static>(
+    pub async fn get_children_w<W: FnOnce(WatchedEvent) + Send + 'static>(
         &self,
         path: &str,
         watcher: W,
@@ -446,9 +448,9 @@ impl ZooKeeper {
 
     /// Return the data and the `Stat` of the node of the given path.
     ///
-    /// Similar to `get_data`, but sets an explicit `Watcher` instead of relying on the client's
+    /// Similar to `get_data`, but sets an explicit watcher instead of relying on the client's
     /// base `Watcher`.
-    pub async fn get_data_w<W: Watcher + 'static>(
+    pub async fn get_data_w<W: FnOnce(WatchedEvent) + Send + 'static>(
         &self,
         path: &str,
         watcher: W,
