@@ -1,8 +1,8 @@
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use std::convert::From;
-use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use std::convert::TryFrom;
+use std::io::{Cursor, Error, ErrorKind, Read, Result, Write};
 
-use crate::{Acl, Permission, Stat, WatchedEvent, WatchedEventType, KeeperState};
+use crate::{Acl, KeeperState, Permission, Stat, WatchedEvent, WatchedEventType};
 
 /// Operation code for messages. See `RequestHeader`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,11 +76,7 @@ impl<R: Read> StringReader for R {
 impl<R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = self.read_i32::<BigEndian>()?;
-        let len = if len < 0 {
-            0
-        } else {
-            len as usize
-        };
+        let len = if len < 0 { 0 } else { len as usize };
         let mut buf = vec![0; len];
         let read = self.read(&mut buf)?;
         if read == len {
@@ -204,7 +200,7 @@ impl ConnectResponse {
             protocol_version: 0,
             timeout,
             session_id: 0,
-            passwd: vec![0;16],
+            passwd: vec![0; 16],
             read_only: false,
         }
     }
@@ -275,7 +271,9 @@ pub struct CreateResponse {
 
 impl ReadFrom for CreateResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<CreateResponse> {
-        Ok(CreateResponse { path: reader.read_string()? })
+        Ok(CreateResponse {
+            path: reader.read_string()?,
+        })
     }
 }
 
@@ -314,7 +312,9 @@ pub struct StatResponse {
 
 impl ReadFrom for StatResponse {
     fn read_from<R: Read>(read: &mut R) -> Result<StatResponse> {
-        Ok(StatResponse { stat: Stat::read_from(read)? })
+        Ok(StatResponse {
+            stat: Stat::read_from(read)?,
+        })
     }
 }
 
@@ -340,7 +340,9 @@ impl ReadFrom for GetAclResponse {
             acl.push(Acl::read_from(reader)?);
         }
         let stat = Stat::read_from(reader)?;
-        Ok(GetAclResponse { acl_stat: (acl, stat) })
+        Ok(GetAclResponse {
+            acl_stat: (acl, stat),
+        })
     }
 }
 
@@ -405,7 +407,9 @@ impl ReadFrom for GetDataResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<GetDataResponse> {
         let data = reader.read_buffer()?;
         let stat = Stat::read_from(reader)?;
-        Ok(GetDataResponse { data_stat: (data, stat) })
+        Ok(GetDataResponse {
+            data_stat: (data, stat),
+        })
     }
 }
 
@@ -443,8 +447,10 @@ impl ReadFrom for WatchedEvent {
         let type_raw = reader.read_i32::<BigEndian>()?;
         let state_raw = reader.read_i32::<BigEndian>()?;
         let path = reader.read_string()?;
-        let event_type = WatchedEventType::from(type_raw);
-        let state = KeeperState::from(state_raw);
+        let event_type = WatchedEventType::try_from(type_raw)
+            .map_err(|error| Error::new(ErrorKind::Other, error))?;
+        let state = KeeperState::try_from(state_raw)
+            .map_err(|error| Error::new(ErrorKind::Other, error))?;
         Ok(WatchedEvent {
             event_type,
             keeper_state: state,

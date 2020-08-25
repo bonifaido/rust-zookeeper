@@ -1,12 +1,11 @@
-use std::error::Error;
-use std::fmt;
-use zookeeper_derive::*;
+use derive_more::*;
+use num_enum::*;
 
 /// Basic type for errors returned from the server.
 #[derive(
-    Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq, Ord, PartialOrd, Eq, Hash,
+    Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash, Error, Display, FromPrimitive,
 )]
-#[EnumConvertFromIntFallback = "Unimplemented"]
+#[repr(i32)]
 pub enum ZkError {
     /// This code is never returned from the server. It should not be used other than to indicate a
     /// range. Specifically error codes greater than this value are API errors (while values less
@@ -58,17 +57,12 @@ pub enum ZkError {
     /// than `APIError`, are system errors.
     SystemError = -1,
     /// Operation is unimplemented.
+    #[num_enum(default)]
     Unimplemented = -6,
 }
 
-impl fmt::Display for ZkError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Zookeeper Error: {}", self.description())
-    }
-}
-
 /// CreateMode value determines how the znode is created on ZooKeeper.
-#[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash, Display)]
 pub enum CreateMode {
     /// The znode will not be automatically deleted upon client's disconnect.
     Persistent = 0,
@@ -92,7 +86,8 @@ pub enum CreateMode {
 
 /// Enumeration of states the client may be at a Watcher Event. It represents the state of the
 /// server at the time the event was generated.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, PartialEq, Ord, PartialOrd, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Ord, PartialOrd, Eq, Hash, TryFromPrimitive)]
+#[repr(i32)]
 pub enum KeeperState {
     /// The client is in the disconnected state - it is not connected to any server in the ensemble.
     Disconnected = 0,
@@ -116,7 +111,8 @@ pub enum KeeperState {
 }
 
 /// Enumeration of types of events that may occur on the znode.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Display, Ord, PartialOrd, Eq, PartialEq, Hash, TryFromPrimitive)]
+#[repr(i32)]
 pub enum WatchedEventType {
     /// Nothing known has occurred on the znode. This value is issued as part of a `WatchedEvent`
     /// when the `KeeperState` changes.
