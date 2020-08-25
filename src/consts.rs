@@ -3,7 +3,7 @@ use std::fmt;
 use zookeeper_derive::*;
 
 /// Basic type for errors returned from the server.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq)]
+#[derive(Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq, Ord, PartialOrd, Eq)]
 #[EnumConvertFromIntFallback = "Unimplemented"]
 pub enum ZkError {
     /// This code is never returned from the server. It should not be used other than to indicate a
@@ -56,7 +56,7 @@ pub enum ZkError {
     /// than `APIError`, are system errors.
     SystemError = -1,
     /// Operation is unimplemented.
-    Unimplemented = -6
+    Unimplemented = -6,
 }
 
 impl fmt::Display for ZkError {
@@ -66,7 +66,7 @@ impl fmt::Display for ZkError {
 }
 
 /// CreateMode value determines how the znode is created on ZooKeeper.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq)]
 pub enum CreateMode {
     /// The znode will not be automatically deleted upon client's disconnect.
     Persistent = 0,
@@ -90,7 +90,7 @@ pub enum CreateMode {
 
 /// Enumeration of states the client may be at a Watcher Event. It represents the state of the
 /// server at the time the event was generated.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, PartialEq)]
+#[derive(Clone, Copy, Debug, EnumConvertFromInt, PartialEq, Ord, PartialOrd, Eq)]
 pub enum KeeperState {
     /// The client is in the disconnected state - it is not connected to any server in the ensemble.
     Disconnected = 0,
@@ -110,7 +110,7 @@ pub enum KeeperState {
     /// The serving cluster has expired this session. The ZooKeeper client connection (the session)
     /// is no longer valid. You must create a new client connection (instantiate a new `ZooKeeper`
     /// instance) if you with to access the ensemble.
-    Expired = -112
+    Expired = -112,
 }
 
 /// Enumeration of types of events that may occur on the znode.
@@ -133,7 +133,7 @@ pub enum WatchedEventType {
     /// Issued when the client removes a data watcher.
     DataWatchRemoved = 5,
     /// Issued when the client removes a child watcher.
-    ChildWatchRemoved = 6
+    ChildWatchRemoved = 6,
 }
 
 /// Enumeration of states the client may be at any time.
