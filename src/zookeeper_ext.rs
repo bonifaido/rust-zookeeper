@@ -12,6 +12,9 @@ pub trait ZooKeeperExt {
     /// This operates in a manner similar to `mkdir -p`.
     async fn ensure_path(&self, path: &str) -> ZkResult<()>;
 
+    /// Ensures path like `ensure_path`, but with the last node created with `mode`.
+    async fn ensure_path_with_leaf_mode(&self, path: &str, mode: CreateMode) -> ZkResult<()>;
+
     /// Performs a breadth-first tree traversal of the tree starting at `path`,
     /// returning a list of fully prefixed child nodes.
     /// *NOTE*: This is not an atomic operation.
@@ -46,6 +49,38 @@ impl ZooKeeperExt for ZooKeeper {
                 Err(e) => return Err(e),
             }
         }
+
+        Ok(())
+    }
+
+    async fn ensure_path_with_leaf_mode(&self, path: &str, mode: CreateMode) -> ZkResult<()> {
+        trace!("ensure_path_with_leaf_mode {}", path);
+        let path_len = path.len();
+        for (i, _) in path
+            .chars()
+            .chain(once('/'))
+            .enumerate()
+            .skip(1)
+            .filter(|c| c.1 == '/')
+        {
+            match self
+                .create(
+                    &path[..i],
+                    vec![],
+                    Acl::open_unsafe().clone(),
+                    if i == path_len {
+                        mode
+                    } else {
+                        CreateMode::Persistent
+                    },
+                )
+                .await
+            {
+                Ok(_) | Err(ZkError::NodeExists) => {}
+                Err(e) => return Err(e),
+            }
+        }
+
         Ok(())
     }
 
