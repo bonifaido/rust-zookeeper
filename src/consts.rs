@@ -3,7 +3,9 @@ use std::fmt;
 use zookeeper_derive::*;
 
 /// Basic type for errors returned from the server.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(
+    Clone, Copy, Debug, EnumConvertFromInt, EnumError, PartialEq, Ord, PartialOrd, Eq, Hash,
+)]
 #[EnumConvertFromIntFallback = "Unimplemented"]
 pub enum ZkError {
     /// This code is never returned from the server. It should not be used other than to indicate a
@@ -66,7 +68,7 @@ impl fmt::Display for ZkError {
 }
 
 /// CreateMode value determines how the znode is created on ZooKeeper.
-#[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum CreateMode {
     /// The znode will not be automatically deleted upon client's disconnect.
     Persistent = 0,
@@ -90,7 +92,7 @@ pub enum CreateMode {
 
 /// Enumeration of states the client may be at a Watcher Event. It represents the state of the
 /// server at the time the event was generated.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(Clone, Copy, Debug, EnumConvertFromInt, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum KeeperState {
     /// The client is in the disconnected state - it is not connected to any server in the ensemble.
     Disconnected = 0,
@@ -114,7 +116,7 @@ pub enum KeeperState {
 }
 
 /// Enumeration of types of events that may occur on the znode.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt)]
+#[derive(Clone, Copy, Debug, EnumConvertFromInt, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum WatchedEventType {
     /// Nothing known has occurred on the znode. This value is issued as part of a `WatchedEvent`
     /// when the `KeeperState` changes.

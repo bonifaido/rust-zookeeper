@@ -5,6 +5,7 @@
 ### Changed
 
 - Node watchers are now `FnOnce`
+- Added missing traits for enums: `Ord`, `PartialOrd`, `Eq`, `Hash`
 
 ### New
 
