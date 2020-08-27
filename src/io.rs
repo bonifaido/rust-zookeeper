@@ -251,15 +251,16 @@ impl ZkIo {
         match request.listener {
             Some(listener) => {
                 trace!("send_response Opcode is {:?}", request.opcode);
-                listener.send(response).unwrap();
+                if let Err(error) = listener.send(response) {
+                    error!("Error sending listener event: {:?}", error);
+                }
             }
             None => info!("Nobody is interested in response {:?}", request.opcode),
         }
         if let Some(watch) = request.watch {
-            self.watch_sender
-                .send(WatchMessage::Watch(watch))
-                .await
-                .unwrap();
+            if let Err(error) = self.watch_sender.send(WatchMessage::Watch(watch)).await {
+                error!("Error sending watch event: {:?}", error);
+            }
         }
     }
 
