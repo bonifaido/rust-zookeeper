@@ -46,7 +46,7 @@ enum Operation {
     ZkStateEvent(ZkState),
 }
 
-/// A [Path Cache](http://curator.apache.org/curator-recipes/path-cache.html) is used to watch a
+/// A [Path Cache](https://curator.apache.org/curator-recipes/path-cache.html) is used to watch a
 /// znode.
 ///
 /// A utility that attempts to keep all data from all children of a ZK path locally cached. This

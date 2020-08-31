@@ -19,8 +19,9 @@ futures = "0.3"
 lazy_static = "1.4"
 log = "0.4"
 num_enum = "0.5"
-tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io-util", "macros"] }
 snowflake = "1.3.0"
+tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io-util", "macros"] }
+uuid = { version = "0.8", features = ["std", "v4"] }
 
 [dev-dependencies]
 env_logger = "0.7"

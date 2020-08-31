@@ -11,6 +11,7 @@
 ### New
 
 - New `ensure_path_with_leaf_mode` function (useful e.g. for creating containers for locks)
+- New [shared lock](https://curator.apache.org/curator-recipes/shared-lock.html) recipe
 
 ## [1.0.3]
 
