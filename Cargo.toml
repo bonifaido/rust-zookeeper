@@ -17,10 +17,10 @@ bytes = "0.5"
 derive_more = "0.99"
 futures = "0.3"
 lazy_static = "1.4"
-log = "0.4"
 num_enum = "0.5"
 snowflake = "1.3.0"
 tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io-util", "macros"] }
+tracing = "0.1"
 uuid = { version = "0.8", features = ["std", "v4"] }
 
 [dev-dependencies]

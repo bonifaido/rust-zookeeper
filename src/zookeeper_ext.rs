@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use log::*;
 use std::collections::VecDeque;
 use std::iter::once;
+use tracing::*;
 
 use crate::{Acl, CreateMode, ZkError, ZkResult, ZooKeeper};
 

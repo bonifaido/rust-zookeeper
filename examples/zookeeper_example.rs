@@ -1,12 +1,12 @@
 #![deny(unused_mut)]
 
-use log::*;
 use std::env;
 use std::io;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use tracing::*;
 use zookeeper_async::recipes::cache::PathChildrenCache;
 use zookeeper_async::{Acl, CreateMode, WatchedEvent, Watcher, ZooKeeper};
 

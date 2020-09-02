@@ -7,6 +7,7 @@
 - Node watchers are now `FnOnce`
 - Added missing traits for enums: `Ord`, `PartialOrd`, `Eq`, `Hash`
 - `WatchedEventType` and `KeeperState` enums now implement `TryFrom<i32>` instead of `From<i32>`
+- Using `tracing` for logs instead of `log`
 
 ### New
 

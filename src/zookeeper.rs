@@ -1,4 +1,3 @@
-use log::*;
 use std::convert::From;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -9,6 +8,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::{channel, Sender as OneshotSender};
 use tokio::sync::Mutex;
+use tracing::*;
 
 use crate::io::ZkIo;
 use crate::listeners::ListenerSet;

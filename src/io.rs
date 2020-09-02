@@ -2,7 +2,6 @@ use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::future::{abortable, AbortHandle};
 use lazy_static::lazy_static;
-use log::*;
 use std::collections::VecDeque;
 use std::io::Cursor;
 use std::net::SocketAddr;
@@ -12,6 +11,7 @@ use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::delay_for;
+use tracing::*;
 
 use crate::listeners::ListenerSet;
 use crate::proto::{

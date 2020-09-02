@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use log::*;
 use tokio::sync::oneshot;
+use tracing::*;
 use uuid::Uuid;
 
 use crate::{Acl, CreateMode, ZkError, ZkResult, ZooKeeper, ZooKeeperExt};

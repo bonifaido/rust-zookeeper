@@ -1,9 +1,9 @@
 //! Caching mechanisms.
-use log::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Mutex;
+use tracing::*;
 
 use crate::listeners::ListenerSet;
 use crate::paths::make_path;

@@ -6,9 +6,9 @@ use zookeeper_async::CreateMode::*;
 use zookeeper_async::{Acl, WatchedEvent, ZooKeeper, ZooKeeperExt};
 
 use env_logger;
-use log::*;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::*;
 
 #[tokio::test]
 async fn path_children_cache_test() {

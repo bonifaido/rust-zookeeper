@@ -1,7 +1,7 @@
-use log::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tracing::*;
 
 use crate::proto::ReadFrom;
 use crate::zookeeper::RawResponse;
