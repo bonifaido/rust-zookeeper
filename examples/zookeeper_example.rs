@@ -136,6 +136,5 @@ async fn zk_example() {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
     zk_example().await;
 }

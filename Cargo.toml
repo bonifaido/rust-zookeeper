@@ -23,8 +23,5 @@ tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io
 tracing = "0.1"
 uuid = { version = "0.8", features = ["std", "v4"] }
 
-[dev-dependencies]
-env_logger = "0.7"
-
 [features]
 unstable = []

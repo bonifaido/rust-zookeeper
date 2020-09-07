@@ -5,7 +5,6 @@ use zookeeper_async::{Acl, CreateMode, WatchedEvent, ZooKeeper};
 
 use test::ZkCluster;
 
-use env_logger;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -14,8 +13,6 @@ use tracing::*;
 
 #[tokio::test]
 async fn zk_test() {
-    let _ = env_logger::try_init();
-
     // Create a test cluster
     let mut cluster = ZkCluster::start(3);
 
