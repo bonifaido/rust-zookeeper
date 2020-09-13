@@ -3,10 +3,12 @@
 extern crate log;
 extern crate env_logger;
 extern crate zookeeper;
+extern crate uuid;
 
 mod test_zk;
 mod test_cache;
 mod test_recursive;
+mod test_leader;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
