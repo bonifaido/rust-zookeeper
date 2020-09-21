@@ -2,7 +2,7 @@ extern crate env_logger;
 extern crate uuid;
 extern crate zookeeper;
 
-use std::{sync::Arc, thread, time::Duration};
+use std::{env, sync::Arc, thread, time::Duration};
 use uuid::Uuid;
 use zookeeper::{recipes::leader::LeaderLatch, WatchedEvent, Watcher, ZooKeeper};
 
@@ -14,10 +14,21 @@ impl Watcher for NoopWatcher {
     fn handle(&self, _ev: WatchedEvent) {}
 }
 
+fn zk_server_urls() -> String {
+    let key = "ZOOKEEPER_SERVERS";
+    match env::var(key) {
+        Ok(val) => val,
+        Err(_) => "localhost:2181".to_string(),
+    }
+}
+
 fn main() {
     env_logger::init();
-    let zk =
-        ZooKeeper::connect("localhost:2181", Duration::from_millis(2500), NoopWatcher).unwrap();
+
+    let zk_urls = zk_server_urls();
+    log::info!("connecting to {}", zk_urls);
+
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher).unwrap();
 
     let id = Uuid::new_v4().to_string();
     log::info!("starting host with id: {:?}", id);

@@ -1,15 +1,13 @@
 use uuid::Uuid;
 use zookeeper::{recipes::leader::LeaderLatch, ZkResult, ZooKeeper};
-
 use env_logger;
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration, thread};
 use ZkCluster;
-
-const LATCH_PATH: &str = "/latch-test";
 
 #[test]
 fn leader_latch_test() -> ZkResult<()> {
     let _ = env_logger::try_init();
+    let latch_path = "/latch-test";
 
     let cluster = ZkCluster::start(1);
     let zk = Arc::new(ZooKeeper::connect(
@@ -19,10 +17,10 @@ fn leader_latch_test() -> ZkResult<()> {
     )?);
 
     let id1 = Uuid::new_v4().to_string();
-    let latch1 = LeaderLatch::new(Arc::clone(&zk), id1, LATCH_PATH.into());
+    let latch1 = LeaderLatch::new(Arc::clone(&zk), id1, latch_path.into());
 
     let id2 = Uuid::new_v4().to_string();
-    let latch2 = LeaderLatch::new(Arc::clone(&zk), id2, LATCH_PATH.into());
+    let latch2 = LeaderLatch::new(Arc::clone(&zk), id2, latch_path.into());
 
     latch1.start().unwrap();
     assert!(latch1.has_leadership());
@@ -38,18 +36,22 @@ fn leader_latch_test() -> ZkResult<()> {
     assert!(zk.exists(&latch2_path, false)?.is_some());
 
     assert!(!latch1.has_leadership());
+
+    // Need to wait for leadership to propogate to latch2.
+    thread::sleep(Duration::from_secs(1));
     assert!(latch2.has_leadership());
 
     latch2.stop()?;
     assert!(!latch2.has_leadership());
 
-    zk.delete(LATCH_PATH, None)?;
+    zk.delete(latch_path, None)?;
     Ok(())
 }
 
 #[test]
 fn leader_latch_test_disconnect() -> ZkResult<()> {
     let _ = env_logger::try_init();
+    let latch_path = "/latch-test-disconnect";
 
     let cluster = ZkCluster::start(1);
     let zk = Arc::new(ZooKeeper::connect(
@@ -59,7 +61,7 @@ fn leader_latch_test_disconnect() -> ZkResult<()> {
     )?);
 
     let id = Uuid::new_v4().to_string();
-    let latch = LeaderLatch::new(Arc::clone(&zk), id, LATCH_PATH.into());
+    let latch = LeaderLatch::new(Arc::clone(&zk), id, latch_path.into());
 
     latch.start().unwrap();
     assert!(latch.has_leadership());
