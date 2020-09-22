@@ -6,13 +6,9 @@ use ZkCluster;
 
 use std::sync::Arc;
 use std::time::Duration;
-use env_logger;
-
 
 #[test]
 fn path_children_cache_test() {
-    let _ = env_logger::try_init();
-
     // Create a test cluster
     let cluster = ZkCluster::start(1);
 
@@ -31,5 +27,5 @@ fn path_children_cache_test() {
 
     let data = path_children_cache.get_current_data();
 
-    info!("Data: {:?}", data);
+    println!("Data: {:?}", data);
 }
