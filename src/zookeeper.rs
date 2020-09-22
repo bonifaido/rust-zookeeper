@@ -10,9 +10,9 @@ use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
 use std::string::ToString;
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
 
@@ -37,6 +37,7 @@ pub struct ZooKeeper {
     xid: AtomicIsize,
     io: Mutex<MioSender<RawRequest>>,
     listeners: ListenerSet<ZkState>,
+    is_connected: Arc<AtomicBool>,
 }
 
 impl ZooKeeper {
@@ -78,13 +79,21 @@ impl ZooKeeper {
         try!(Self::zk_thread("io", move || io.run().unwrap()));
 
         trace!("Returning a ZooKeeper");
-
-        Ok(ZooKeeper {
-            chroot: chroot,
+        let zk = ZooKeeper {
+            chroot,
             xid: AtomicIsize::new(1),
             io: Mutex::new(sender),
-            listeners: listeners,
-        })
+            listeners,
+            is_connected: Arc::new(AtomicBool::new(false)),
+        };
+
+        let is_connected = Arc::clone(&zk.is_connected);
+        zk.add_listener(move |ev| {
+            if let ZkState::Closed = ev {
+                is_connected.store(false, Ordering::Release);
+            }
+        });
+        Ok(zk)
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
@@ -514,18 +523,32 @@ impl ZooKeeper {
     /// Close this client object. Once the client is closed, its session becomes invalid. All the
     /// ephemeral nodes in the ZooKeeper server associated with the session will be removed. The
     /// watches left on those nodes (and on their parents) will be triggered.
+    ///
+    /// # Panics
+    ///
+    /// If the connection is already closed.
     pub fn close(&self) -> ZkResult<()> {
         trace!("ZooKeeper::close");
-        let _: EmptyResponse = try!(self.request(OpCode::CloseSession, 0, EmptyRequest, None));
+        if self.is_connected.load(Ordering::Acquire) {
+            panic!("connection already closed");
+        }
 
+        let result: Result<EmptyResponse, ZkError> =
+            self.request(OpCode::CloseSession, 0, EmptyRequest, None);
+        if let Err(e) = result {
+            error!("failed to close connection: {}", e);
+            return Err(e);
+        }
         Ok(())
     }
 }
 
 impl Drop for ZooKeeper {
     fn drop(&mut self) {
-        if let Err(err) = self.close() {
-            error!("error closing zookeeper connection in drop: {:?}", err);
+        if self.is_connected.load(Ordering::Acquire) {
+            if let Err(e) = self.close() {
+                error!("error closing zookeeper connection in drop: {}", e);
+            }
         }
     }
 }
