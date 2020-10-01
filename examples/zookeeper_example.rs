@@ -6,14 +6,13 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use tracing::*;
 use zookeeper_async::recipes::cache::PathChildrenCache;
 use zookeeper_async::{Acl, CreateMode, WatchedEvent, Watcher, ZooKeeper};
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
     fn handle(&self, e: WatchedEvent) {
-        info!("{:?}", e)
+        println!("{:?}", e)
     }
 }
 

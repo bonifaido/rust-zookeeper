@@ -22,7 +22,7 @@ async fn zk_test() {
     // Connect to the test cluster
     let zk = ZooKeeper::connect(
         &cluster.connect_string,
-        Duration::from_secs(5),
+        Duration::from_secs(10),
         move |event: WatchedEvent| {
             info!("{:?}", event);
             if event.keeper_state == KeeperState::Disconnected {
