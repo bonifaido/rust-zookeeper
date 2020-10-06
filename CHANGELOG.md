@@ -1,6 +1,8 @@
 # Changelog
 
-## [x.x.x]
+## [2.1.0]
+
+### New
 
 - New [leader latch](https://curator.apache.org/curator-recipes/leader-latch.html) recipe
 
