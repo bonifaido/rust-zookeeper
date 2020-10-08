@@ -1,5 +1,11 @@
 # Changelog
 
+## [x.x.x]
+
+### New
+
+- To string conversion from some enums
+
 ## [2.1.0]
 
 ### New

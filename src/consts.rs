@@ -61,6 +61,12 @@ pub enum ZkError {
     Unimplemented = -6,
 }
 
+impl From<ZkError> for String {
+    fn from(value: ZkError) -> Self {
+        value.to_string()
+    }
+}
+
 /// CreateMode value determines how the znode is created on ZooKeeper.
 #[derive(Clone, Copy, Debug, PartialEq, Ord, PartialOrd, Eq, Hash, Display)]
 pub enum CreateMode {
@@ -82,6 +88,12 @@ pub enum CreateMode {
     /// the server at some point in the future. Given this property, you should be prepared to get
     /// `ZkError::NoNode` when creating children inside of this container node.
     Container = 4,
+}
+
+impl From<CreateMode> for String {
+    fn from(value: CreateMode) -> Self {
+        value.to_string()
+    }
 }
 
 /// Enumeration of states the client may be at a Watcher Event. It represents the state of the
@@ -110,6 +122,12 @@ pub enum KeeperState {
     Expired = -112,
 }
 
+impl From<KeeperState> for String {
+    fn from(value: KeeperState) -> Self {
+        value.to_string()
+    }
+}
+
 /// Enumeration of types of events that may occur on the znode.
 #[derive(Clone, Copy, Debug, Display, Ord, PartialOrd, Eq, PartialEq, Hash, TryFromPrimitive)]
 #[repr(i32)]
@@ -134,8 +152,14 @@ pub enum WatchedEventType {
     ChildWatchRemoved = 6,
 }
 
+impl From<WatchedEventType> for String {
+    fn from(value: WatchedEventType) -> Self {
+        value.to_string()
+    }
+}
+
 /// Enumeration of states the client may be at any time.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Display)]
 pub enum ZkState {
     /// Previously used to represent a state between connection (as in connected to a server) and
     /// authenticated. This is no longer used.
@@ -157,4 +181,10 @@ pub enum ZkState {
     /// longer used.
     #[deprecated]
     NotConnected,
+}
+
+impl From<ZkState> for String {
+    fn from(value: ZkState) -> Self {
+        value.to_string()
+    }
 }
