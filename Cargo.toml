@@ -19,9 +19,12 @@ futures = "0.3"
 lazy_static = "1.4"
 num_enum = "0.5"
 snowflake = "1.3.0"
-tokio = { version = "0.2", features = ["rt-threaded", "sync", "tcp", "time", "io-util", "macros"] }
+tokio = { version = "0.3", features = ["rt-multi-thread", "sync", "net", "time", "io-util", "macros"] }
 tracing = "0.1"
 uuid = { version = "0.8", features = ["std", "v4"] }
+
+[dev-dependencies]
+tracing-subscriber = "0.2"
 
 [features]
 unstable = []

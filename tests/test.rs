@@ -3,6 +3,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 
+use tracing_subscriber;
+
 pub struct ZkCluster {
     process: Child,
     pub connect_string: String,
@@ -11,6 +13,8 @@ pub struct ZkCluster {
 
 impl ZkCluster {
     pub fn start(instances: usize) -> ZkCluster {
+        let _ = tracing_subscriber::fmt::try_init();
+
         let mut process = match Command::new("java")
             .arg("-jar")
             .arg("zk-test-cluster/target/main.jar")
