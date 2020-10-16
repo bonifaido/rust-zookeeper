@@ -10,7 +10,7 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use tracing::*;
 
 use crate::listeners::ListenerSet;
@@ -282,10 +282,10 @@ impl ZkIo {
         match atype {
             ZkTimeout::Ping => {
                 let duration = self.ping_timeout_duration.clone();
-                let (future, handle) = abortable(delay_for(duration));
+                let (future, handle) = abortable(sleep(duration));
                 self.ping_timeout = Some(handle);
 
-                let mut tx = self.ping_tx.clone();
+                let tx = self.ping_tx.clone();
                 tokio::spawn(async move {
                     if future.await.is_ok() {
                         let _ = tx.send(()).await;
@@ -294,10 +294,10 @@ impl ZkIo {
             }
             ZkTimeout::Connect => {
                 let duration = self.conn_timeout_duration.clone();
-                let (future, handle) = abortable(delay_for(duration));
+                let (future, handle) = abortable(sleep(duration));
                 self.conn_timeout = Some(handle);
 
-                let mut tx = self.connect_tx.clone();
+                let tx = self.connect_tx.clone();
                 tokio::spawn(async move {
                     if future.await.is_ok() {
                         let _ = tx.send(()).await;
@@ -345,11 +345,13 @@ impl ZkIo {
                 let (mut rx, tx) = sock.into_split();
                 self.sock_tx = Some(tx);
 
-                let mut data_tx = self.data_tx.clone();
+                let data_tx = self.data_tx.clone();
                 tokio::spawn(async move {
                     let mut buf = BytesMut::with_capacity(4096);
-                    while let Ok(read) = rx.read_buf(&mut buf).await {
+                    while let Ok(read) = rx.read(&mut buf).await {
                         trace!("Received {:?} bytes", read);
+
+                        buf.advance(read);
                         if data_tx.send(buf).await.is_err() {
                             return;
                         }

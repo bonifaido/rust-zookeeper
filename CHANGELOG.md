@@ -2,6 +2,10 @@
 
 ## [x.x.x]
 
+### Changed
+
+- Updated `tokio` to 0.3.
+
 ### New
 
 - To string conversion from some enums
