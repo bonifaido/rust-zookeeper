@@ -13,7 +13,7 @@ pub struct ZkCluster {
 
 impl ZkCluster {
     pub fn start(instances: usize) -> ZkCluster {
-        tracing_subscriber::fmt::init();
+        let _ = tracing_subscriber::fmt::try_init();
 
         let mut process = match Command::new("java")
             .arg("-jar")

@@ -347,20 +347,17 @@ impl ZkIo {
 
                 let data_tx = self.data_tx.clone();
                 tokio::spawn(async move {
-                    let mut buf = BytesMut::with_capacity(4096);
+                    let mut buf = [0u8; 4096];
                     while let Ok(read) = rx.read(&mut buf).await {
                         trace!("Received {:?} bytes", read);
 
-                        buf.advance(read);
-                        if data_tx.send(buf).await.is_err() {
+                        if data_tx.send(buf[..read].into()).await.is_err() {
                             return;
                         }
 
                         if read == 0 {
                             break;
                         }
-
-                        buf = BytesMut::with_capacity(4096);
                     }
 
                     trace!("Exiting read loop");
