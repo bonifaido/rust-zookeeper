@@ -1,6 +1,6 @@
 # Changelog
 
-## [x.x.x]
+## [3.0.0]
 
 ### Changed
 
