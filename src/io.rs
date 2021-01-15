@@ -189,7 +189,7 @@ impl ZkIo {
             }
             let response = RawResponse {
                 header,
-                data: Cursor::new(data.bytes().to_vec()),
+                data: Cursor::new(data.chunk().to_vec()),
             }; // TODO COPY!
             match response.header.xid {
                 -1 => {
@@ -389,7 +389,7 @@ impl ZkIo {
         if let Some(tx) = self.sock_tx.as_mut() {
             while let Some(request) = self.buffer.pop_front() {
                 trace!("Writing data: {:?}", request.opcode);
-                match tx.write_all(request.data.bytes()).await {
+                match tx.write_all(request.data.chunk()).await {
                     Ok(()) => {
                         if request.opcode == OpCode::CloseSession {
                             let old_state = self.state;
