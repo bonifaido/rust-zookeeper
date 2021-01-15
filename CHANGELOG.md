@@ -1,10 +1,16 @@
 # Changelog
 
+## [4.0.0]
+
+### Changed
+
+- Updated `tokio` to 1.0
+
 ## [3.0.0]
 
 ### Changed
 
-- Updated `tokio` to 0.3.
+- Updated `tokio` to 0.3
 
 ### New
 
