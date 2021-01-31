@@ -240,7 +240,6 @@ fn ensure_path(zk: &ZooKeeper, path: &str) -> ZkResult<()> {
 }
 
 fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
-    debug!("got znode change event");
     if let WatchedEventType::NodeDeleted = ev.event_type {
         if let Err(e) = latch.check_leadership() {
             log::error!("failed to check for leadership: {:?}", e);
