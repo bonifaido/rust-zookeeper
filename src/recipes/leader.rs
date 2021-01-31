@@ -202,7 +202,7 @@ fn create_latch_znode(ll: &LeaderLatch, parent_path: &str, id: &str) -> ZkResult
     )?;
     // add the handle_znode_change to the freshly created znode
     let latch = ll.clone();
-    ll.zk.exists_w(&ZNode::creation_path(parent_path, id), move |ev| {
+    ll.zk.exists_w(&zrsp, move |ev| {
         handle_znode_change(&latch, ev)
     })?;
     Ok(zrsp)
@@ -240,6 +240,7 @@ fn ensure_path(zk: &ZooKeeper, path: &str) -> ZkResult<()> {
 }
 
 fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
+    debug!("got znode change event");
     if let WatchedEventType::NodeDeleted = ev.event_type {
         if let Err(e) = latch.check_leadership() {
             log::error!("failed to check for leadership: {:?}", e);
