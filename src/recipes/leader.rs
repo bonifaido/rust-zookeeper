@@ -110,7 +110,7 @@ impl LeaderLatch {
         self.set_leadership(false);
         self.set_path(None)?;
 
-        let path = create_latch_znode(&self.zk, &self.parent_path, &self.id)?;
+        let path = create_latch_znode(self, &self.parent_path, &self.id)?;
         self.set_path(Some(path))?;
 
         self.check_leadership()
@@ -192,14 +192,20 @@ impl LeaderLatch {
     }
 }
 
-fn create_latch_znode(zk: &ZooKeeper, parent_path: &str, id: &str) -> ZkResult<String> {
-    ensure_path(zk, parent_path)?;
-    zk.create(
+fn create_latch_znode(ll: &LeaderLatch, parent_path: &str, id: &str) -> ZkResult<String> {
+    ensure_path(&ll.zk, parent_path)?;
+    let zrsp = ll.zk.create(
         &ZNode::creation_path(parent_path, id),
         vec![],
         Acl::open_unsafe().clone(),
         CreateMode::EphemeralSequential,
-    )
+    )?;
+    // add the handle_znode_change to the freshly created znode
+    let latch = ll.clone();
+    ll.zk.exists_w(&zrsp, move |ev| {
+        handle_znode_change(&latch, ev)
+    })?;
+    Ok(zrsp)
 }
 
 fn get_latch_znodes(zk: &ZooKeeper, parent_path: &str) -> ZkResult<Vec<ZNode>> {
