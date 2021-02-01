@@ -1,0 +1,35 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+
+      - name: Build
+        run: cargo build
+
+      - name: Build zk-test-cluster
+        working-directory: zk-test-cluster
+        run: mvn clean package
+
+      - name: Test
+        run: cargo test
+
+      - name: Build docs
+        run: |
+          cargo doc --no-deps -p zookeeper -p zookeeper_derive
+          echo '<meta http-equiv="refresh" content="0;url=zookeeper/index.html">' > target/doc/index.html
+
+      - name: Deploy docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: target/doc
+          force_orphan: true
