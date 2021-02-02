@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.0.1]
+
+### Fixed
+
+- Fix lock not setting handler on first node in leader election.
+
+### Changed
+
+- Updated dependencies
+
 ## [4.0.0]
 
 ### Changed
