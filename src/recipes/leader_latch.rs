@@ -118,7 +118,7 @@ impl LeaderLatch {
             self.set_leadership(false);
             self.set_path(None).await?;
 
-            let path = create_latch_znode(&self.zk, &self.parent_path, &self.id).await?;
+            let path = create_latch_znode(self, &self.parent_path, &self.id).await?;
             self.set_path(Some(path)).await?;
 
             self.check_leadership().await
@@ -210,16 +210,31 @@ impl LeaderLatch {
     }
 }
 
-async fn create_latch_znode(zk: &ZooKeeper, parent_path: &str, id: &str) -> ZkResult<String> {
-    zk.ensure_path_with_leaf_mode(parent_path, CreateMode::Container)
+async fn create_latch_znode(ll: &LeaderLatch, parent_path: &str, id: &str) -> ZkResult<String> {
+    ll.zk
+        .ensure_path_with_leaf_mode(parent_path, CreateMode::Container)
         .await?;
-    zk.create(
-        &ZNode::creation_path(parent_path, id),
-        vec![],
-        Acl::open_unsafe().clone(),
-        CreateMode::EphemeralSequential,
-    )
-    .await
+
+    let zrsp = ll
+        .zk
+        .create(
+            &ZNode::creation_path(parent_path, id),
+            vec![],
+            Acl::open_unsafe().clone(),
+            CreateMode::EphemeralSequential,
+        )
+        .await?;
+
+    // add the handle_znode_change to the freshly created znode
+    let latch = ll.clone();
+    ll.zk
+        .exists_w(&zrsp, move |ev| {
+            tokio::spawn(async move {
+                handle_znode_change(&latch, ev).await;
+            });
+        })
+        .await?;
+    Ok(zrsp)
 }
 
 async fn get_latch_znodes(zk: &ZooKeeper, parent_path: &str) -> ZkResult<Vec<ZNode>> {

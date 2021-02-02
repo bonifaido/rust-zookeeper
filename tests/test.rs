@@ -44,6 +44,7 @@ impl ZkCluster {
         connect_string
     }
 
+    #[allow(dead_code)]
     pub fn kill_an_instance(&mut self) {
         self.process.stdin.as_mut().unwrap().write(b"k").unwrap();
     }
