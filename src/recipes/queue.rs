@@ -91,11 +91,31 @@ impl ZkQueue {
         }
         // infinite recursion for the win
     }
-    //
-    // pub fn remove(&self) -> ZkResult<Option<Vec<u8>>> {
-    //
-    // }
-    //
+
+    /// Returns the data at the first element of the queue, or Ok(None) if the queue is empty.
+    pub fn peek(&self) -> ZkResult<Option<Vec<u8>>> {
+        let op = self.ordered_children(Some(|ev|{}))?;
+        Ok(match op.len() > 0 {
+            true => Some(self.zk.get_data(&*format!("{}/{}", self.dir, op[0]), false)?.0),
+            false => None
+        })
+    }
+
+    /// Attempts to remove the head of the queue and return it. Returns Ok(None) if the queue is empty.
+    pub fn poll(&self) -> ZkResult<Option<Vec<u8>>> {
+        let op = self.ordered_children(Some(|ev|{}))?;
+
+        if op.len() > 0 {
+            return match self.claim(format!("{}/{}", self.dir, op[0])) {
+                Ok(r) => Ok(Some(r)),
+                Err(e) => {
+                    if e != ZkError::NoNode { return Err(e); }
+                    return Ok(None);
+                }
+            };
+        }
+        Ok(None)
+    }
 
 }
 
