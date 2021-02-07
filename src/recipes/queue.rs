@@ -1,9 +1,7 @@
 /// https://github.com/apache/zookeeper/blob/master/zookeeper-recipes/zookeeper-recipes-queue/src/main/java/org/apache/zookeeper/recipes/queue/DistributedQueue.java
 ///
 use crate::{
-    paths, Acl, CreateMode, Subscription, WatchedEvent, WatchedEventType, ZkError, ZkResult,
-    ZkState, ZooKeeper,
-    watch::Watcher
+    Acl, CreateMode, WatchedEvent, WatchedEventType, ZkError, ZkResult, ZooKeeper, watch::Watcher
 };
 use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
 use std::sync::Arc;
@@ -97,7 +95,7 @@ impl ZkQueue {
 
     /// Returns the data at the first element of the queue, or Ok(None) if the queue is empty.
     pub fn peek(&self) -> ZkResult<Option<Vec<u8>>> {
-        let op = self.ordered_children(Some(|ev|{}))?;
+        let op = self.ordered_children(Some(|_|{}))?;
         Ok(match op.is_empty() {
             false => Some(self.zk.get_data(&*format!("{}/{}", self.dir, op[0]), false)?.0),
             true => None
@@ -106,7 +104,7 @@ impl ZkQueue {
 
     /// Attempts to remove the head of the queue and return it. Returns Ok(None) if the queue is empty.
     pub fn poll(&self) -> ZkResult<Option<Vec<u8>>> {
-        let op = self.ordered_children(Some(|ev|{}))?;
+        let op = self.ordered_children(Some(|_|{}))?;
         if !op.is_empty() {
             return match self.claim(format!("{}/{}", self.dir, op[0])) {
                 Err(e) if e == ZkError::NoNode => Ok(None),
