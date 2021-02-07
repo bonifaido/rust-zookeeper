@@ -28,7 +28,7 @@ fn main() {
 
     let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher).unwrap();
 
-    let queue = ZkQueue::new(Arc::new(zk), "/testing2".to_string());
+    let queue = ZkQueue::new(Arc::new(zk), "/testing2".to_string()).unwrap();
 
 
     let message = "Hello World";

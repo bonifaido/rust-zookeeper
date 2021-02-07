@@ -17,15 +17,14 @@ pub struct ZkQueue {
     zk: Arc<ZooKeeper>,
 }
 impl ZkQueue {
-    pub fn new(zk: Arc<ZooKeeper>, dir: String) -> Self {
-        if zk.exists(&dir, false).unwrap().is_none() {
-            println!("does mot exist");
-            zk.create(&dir, vec![0], Acl::open_unsafe().clone(), CreateMode::Container).unwrap();
+    pub fn new(zk: Arc<ZooKeeper>, dir: String) -> ZkResult<Self> {
+        if zk.exists(&dir, false)?.is_none() {
+            let _ = zk.create(&dir, vec![0], Acl::open_unsafe().clone(), CreateMode::Container)?;
         }
-        Self {
+        Ok(Self {
             zk,
             dir
-        }
+        })
     }
 
     /// Inserts data into the queue
@@ -37,27 +36,31 @@ impl ZkQueue {
             CreateMode::PersistentSequential)
     }
 
+    /// Claim a item from the queue. gets the contents of the znode, and then delete it.
+    ///
+    /// NOTE. There is a small chance that another client could execute getData before this client
+    /// deletes the znode. If this is an issue, a LeaderLatch would need to be implemented
     fn claim(&self, key: String) -> ZkResult<Vec<u8>> {
-        debug!("claiming {}", &key);
         let data = self.zk.get_data(&key, false)?;
         self.zk.delete(&key, None)?;
         Ok(data.0)
     }
 
-    /// Returns a Vec of the children, in
+    /// Returns a Vec of the children, in order, of the task znode
     fn ordered_children<W: Watcher + 'static>(&self, watcher: Option<W>) -> ZkResult<Vec<String>> {
         let mut children: Vec<(u64, String)> = Vec::new();
         match watcher {
-            Some(W) => self.zk.get_children_w(&self.dir, W),
+            Some(w) => self.zk.get_children_w(&self.dir, w),
             None => self.zk.get_children(&self.dir, false) // false I think?
         }?.iter().for_each(|child| {
+            // the child names will be like qn-0000001. chop off the prefix, and try and convert the
+            // rest to a u64. if it fails, let's ignore it and move on
             if let Ok(index) = child.replace(ZK_DISTRIBUTEDQUEUE_PREFIX, "").parse::<u64>() {
                 children.push((index, child.clone()))
             } else {
-                warn!("found child with improper name: {}", child);
+                warn!("found child with improper name: {}. ignoring", child);
             }
         });
-
         children.sort_by(|a, b| a.0.cmp(&b.0));
 
         Ok(children.iter().map(|i| i.1.clone()).collect())
@@ -65,7 +68,8 @@ impl ZkQueue {
 
     /// Removes the head of the queue and returns it, blocking until it succeeds or throws an error
     pub fn take(&self) -> ZkResult<Vec<u8>> {
-        // call self.ordered_children
+        // create a channel with a capacity of 1 to act as a latch if there are not messages in the
+        // queue.
         let latch: (SyncSender<bool>, Receiver<bool>) = sync_channel(1);
         loop {
             let tx = latch.0.clone();
@@ -73,45 +77,41 @@ impl ZkQueue {
                 handle_znode_change(&tx, ev)
             }))?;
 
-            // if we get keys from self.ordered_children, return the top key after claiming it
-            if op.len() > 0 {
-                let claim = self.claim(format!("{}/{}", self.dir, op[0]));
-                if claim.is_err() {
-                    let error = claim.err().unwrap();
-                    // if there is no node, we want to try this whole process again
-                    // if there is an error, abort because something is broken
-                    if ZkError::NoNode != error { return Err(error); }
-                    continue;
-                }
-                return Ok(claim.unwrap());
+            // if self.ordered_children returned something, let's try and claim it
+            if !op.is_empty() {
+                return match self.claim(format!("{}/{}", self.dir, op[0])) {
+                    // if the claim fails because the requested znode has been deleted, assume
+                    // someone else claimed it and try again
+                    Err(e) if e == ZkError::NoNode => continue,
+                    // any other error should be passed up
+                    Err(e) => Err(e),
+
+                    Ok(claim) => Ok(claim)
+                };
             }
 
-            // otherwise, wait until we get something back from the Reciver
+            // otherwise, wait until the handler is called and try this again
             let _ = latch.1.recv().unwrap();
         }
-        // infinite recursion for the win
     }
 
     /// Returns the data at the first element of the queue, or Ok(None) if the queue is empty.
     pub fn peek(&self) -> ZkResult<Option<Vec<u8>>> {
         let op = self.ordered_children(Some(|ev|{}))?;
-        Ok(match op.len() > 0 {
-            true => Some(self.zk.get_data(&*format!("{}/{}", self.dir, op[0]), false)?.0),
-            false => None
+        Ok(match op.is_empty() {
+            false => Some(self.zk.get_data(&*format!("{}/{}", self.dir, op[0]), false)?.0),
+            true => None
         })
     }
 
     /// Attempts to remove the head of the queue and return it. Returns Ok(None) if the queue is empty.
     pub fn poll(&self) -> ZkResult<Option<Vec<u8>>> {
         let op = self.ordered_children(Some(|ev|{}))?;
-
-        if op.len() > 0 {
+        if !op.is_empty() {
             return match self.claim(format!("{}/{}", self.dir, op[0])) {
-                Ok(r) => Ok(Some(r)),
-                Err(e) => {
-                    if e != ZkError::NoNode { return Err(e); }
-                    return Ok(None);
-                }
+                Err(e) if e == ZkError::NoNode => Ok(None),
+                Err(e) => Err(e),
+                Ok(claim) => Ok(Some(claim))
             };
         }
         Ok(None)

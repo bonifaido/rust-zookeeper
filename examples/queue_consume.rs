@@ -28,10 +28,15 @@ fn main() {
 
     let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher).unwrap();
 
-    let queue = ZkQueue::new(Arc::new(zk), "/testing2".to_string());
+    let queue = ZkQueue::new(Arc::new(zk), "/testing2".to_string()).unwrap();
 
     println!("waiting for a message");
     let msg = queue.take();
-    println!("{}", String::from_utf8_lossy(&*msg.unwrap()));
+    if msg.is_err() {
+        eprint!("unable to listen for message. error: {}", msg.err().unwrap().to_string())
+    } else {
+        println!("got {:?}", String::from_utf8(msg.unwrap()).unwrap());
+
+    }
 
 }
