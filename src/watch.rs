@@ -74,8 +74,8 @@ impl<W: Watcher> ZkWatch<W> {
 
         ZkWatch {
             watches: HashMap::new(),
-            watcher,
-            chroot,
+            watcher: watcher,
+            chroot: chroot,
             tx,
             rx
         }
