@@ -236,7 +236,7 @@ impl ZkIo {
                 self.state = ZkState::NotConnected;
             } else {
                 self.conn_resp = conn_resp;
-                info!("Connected: {:?}", self.conn_resp);
+                trace!("Connected: {:?}", self.conn_resp);
                 self.timeout_ms = self.conn_resp.timeout;
                 self.ping_timeout_duration = Duration::from_millis(self.conn_resp.timeout / 3 * 2);
 
