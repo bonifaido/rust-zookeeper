@@ -219,7 +219,10 @@ impl ReadFrom for ConnectResponse {
             timeout: try!(reader.read_i32::<BigEndian>()) as u64,
             session_id: try!(reader.read_i64::<BigEndian>()),
             passwd: try!(reader.read_buffer()),
-            read_only: try!(reader.read_u8()) != 0,
+            // only zookeeper server doesn't have the "readonly" field, see also
+            //
+            //  https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/ClientCnxnSocket.java#L143-L154
+            read_only: reader.read_u8().map_or(false, |v| v != 0),
         })
     }
 }
