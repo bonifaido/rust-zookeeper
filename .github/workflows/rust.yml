@@ -21,6 +21,9 @@ jobs:
       with:
         distribution: adopt
         java-version: 8
+    - name: Build zk-test-cluster
+      working-directory: zk-test-cluster
+      run: mvn clean package
     - uses: actions-rs/cargo@v1
       with:
         command: test
