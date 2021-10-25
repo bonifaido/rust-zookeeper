@@ -19,7 +19,7 @@ jobs:
           components: rustfmt, clippy
     - uses: actions/setup-java@v2
       with:
-        distribution: adapt
+        distribution: adopt
         java-version: 8
     - uses: actions-rs/cargo@v1
       with:
