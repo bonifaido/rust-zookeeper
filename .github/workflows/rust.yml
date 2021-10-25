@@ -15,7 +15,17 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
           profile: minimal
-          override: true
+          toolchain: stable
+          components: rustfmt, clippy
     - uses: actions-rs/cargo@v1
       with:
         command: test
+        args: --all-features
+    - uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --all -- --check
+    - uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets --all-features
