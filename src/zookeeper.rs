@@ -113,7 +113,7 @@ impl ZooKeeper {
         let mut addrs = Vec::new();
         for addr_str in connect_string[..end].split(',') {
             let addr = match addr_str.trim().to_socket_addrs() {
-                Ok(mut addrs) => match addrs.nth(0) {
+                Ok(mut addrs) => match addrs.next() {
                     Some(addr) => addr,
                     None => return Err(ZkError::BadArguments),
                 },
@@ -168,7 +168,7 @@ impl ZooKeeper {
         match path {
             "" => Err(ZkError::BadArguments),
             path => {
-                if path.len() > 1 && path.chars().last() == Some('/') {
+                if path.len() > 1 && path.ends_with('/') {
                     Err(ZkError::BadArguments)
                 } else {
                     Ok(path)
@@ -548,9 +548,8 @@ mod tests {
     fn parse_connect_string() {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,::1:2181/mesos")
-            .ok()
-            .expect("Parse 1");
+        let (addrs, chroot) =
+            ZooKeeper::parse_connect_string("127.0.0.1:2181,::1:2181/mesos").expect("Parse 1");
         assert_eq!(
             addrs,
             vec![
@@ -565,9 +564,7 @@ mod tests {
         );
         assert_eq!(chroot, Some("/mesos".to_owned()));
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181")
-            .ok()
-            .expect("Parse 2");
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181").expect("Parse 2");
         assert_eq!(
             addrs,
             vec![SocketAddr::V6(SocketAddrV6::new(
@@ -579,9 +576,7 @@ mod tests {
         );
         assert_eq!(chroot, None);
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181/")
-            .ok()
-            .expect("Parse 3");
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181/").expect("Parse 3");
         assert_eq!(
             addrs,
             vec![SocketAddr::V6(SocketAddrV6::new(

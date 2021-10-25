@@ -27,7 +27,7 @@ enum State {
 
 impl PartialEq<u8> for State {
     fn eq(&self, other: &u8) -> bool {
-        *self == State::from(*other)
+        self == &State::from(*other)
     }
 }
 
@@ -112,8 +112,7 @@ impl LeaderLatch {
         self.reset().await
     }
 
-    //noinspection RsNeedlessLifetimes
-    fn reset<'a>(&'a self) -> BoxFuture<'a, ZkResult<()>> {
+    fn reset(&self) -> BoxFuture<'_, ZkResult<()>> {
         async move {
             self.set_leadership(false);
             self.set_path(None).await?;
@@ -126,8 +125,7 @@ impl LeaderLatch {
         .boxed()
     }
 
-    //noinspection RsNeedlessLifetimes
-    fn check_leadership<'a>(&'a self) -> BoxFuture<'a, ZkResult<()>> {
+    fn check_leadership(&self) -> BoxFuture<'_, ZkResult<()>> {
         async move {
             let znodes = get_latch_znodes(&self.zk, &self.parent_path).await?;
             if let Some(path) = &*self.path.lock().await {
@@ -238,10 +236,10 @@ async fn create_latch_znode(ll: &LeaderLatch, parent_path: &str, id: &str) -> Zk
 }
 
 async fn get_latch_znodes(zk: &ZooKeeper, parent_path: &str) -> ZkResult<Vec<ZNode>> {
-    let znodes = zk.get_children(&parent_path, false).await?;
+    let znodes = zk.get_children(parent_path, false).await?;
     let mut latch_znodes: Vec<_> = znodes
         .into_iter()
-        .filter_map(|path| ZNode::with_parent(&parent_path, &path))
+        .filter_map(|path| ZNode::with_parent(parent_path, &path))
         .collect();
     latch_znodes.sort();
     Ok(latch_znodes)

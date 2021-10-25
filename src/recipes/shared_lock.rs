@@ -163,10 +163,8 @@ impl LockGuard {
                 })
                 .await?;
 
-            if stat.is_some() {
-                if rx.await.is_err() {
-                    return Err(ZkError::ConnectionLoss);
-                }
+            if stat.is_some() && rx.await.is_err() {
+                return Err(ZkError::ConnectionLoss);
             }
         }
 

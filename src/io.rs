@@ -281,7 +281,7 @@ impl ZkIo {
         trace!("start_timeout: {:?}", atype);
         match atype {
             ZkTimeout::Ping => {
-                let duration = self.ping_timeout_duration.clone();
+                let duration = self.ping_timeout_duration;
                 let (future, handle) = abortable(sleep(duration));
                 self.ping_timeout = Some(handle);
 
@@ -293,7 +293,7 @@ impl ZkIo {
                 });
             }
             ZkTimeout::Connect => {
-                let duration = self.conn_timeout_duration.clone();
+                let duration = self.conn_timeout_duration;
                 let (future, handle) = abortable(sleep(duration));
                 self.conn_timeout = Some(handle);
 

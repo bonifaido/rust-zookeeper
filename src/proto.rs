@@ -164,7 +164,7 @@ impl ConnectRequest {
     pub fn from(conn_resp: &ConnectResponse, last_zxid_seen: i64) -> ConnectRequest {
         ConnectRequest {
             protocol_version: conn_resp.protocol_version,
-            last_zxid_seen: last_zxid_seen,
+            last_zxid_seen,
             timeout: conn_resp.timeout as i32,
             session_id: conn_resp.session_id,
             passwd: conn_resp.passwd.clone(),

@@ -111,7 +111,7 @@ impl PathChildrenCache {
             };
         };
 
-        let children = zk.get_children_w(&path, watcher).await?;
+        let children = zk.get_children_w(path, watcher).await?;
 
         let mut data_locked = data.lock().await;
 
@@ -353,7 +353,7 @@ impl PathChildrenCache {
         self.event_listeners.subscribe(subscriber)
     }
 
-    pub fn remove_listener(&self, sub: Subscription) -> () {
+    pub fn remove_listener(&self, sub: Subscription) {
         self.event_listeners.unsubscribe(sub)
     }
 

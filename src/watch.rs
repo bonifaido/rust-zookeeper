@@ -123,7 +123,7 @@ impl<W: Watcher> ZkWatch<W> {
             WatchMessage::Watch(watch) => {
                 self.watches
                     .entry(watch.path.clone())
-                    .or_insert(vec![])
+                    .or_insert_with(Vec::new)
                     .push(watch);
             }
         }
@@ -139,7 +139,7 @@ impl<W: Watcher> ZkWatch<W> {
 
     fn dispatch(&mut self, event: &WatchedEvent) {
         debug!("{:?}", event);
-        if let Some(watches) = self.find_watches(&event) {
+        if let Some(watches) = self.find_watches(event) {
             for watch in watches.into_iter() {
                 (watch.watcher)(event.clone())
             }

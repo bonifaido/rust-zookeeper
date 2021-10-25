@@ -1,11 +1,11 @@
+use snowflake::ProcessUniqueId;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use snowflake::ProcessUniqueId;
 
 /// A unique identifier returned by `ZooKeeper::add_listener`.
 ///
 /// It can be used to remove a listener with `ZooKeeper::remove_listener`.
-#[derive(Debug,Clone,Copy,Eq,PartialEq,Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Subscription(ProcessUniqueId);
 
 impl Subscription {
@@ -18,15 +18,20 @@ type ListenerMap<T> = HashMap<Subscription, Box<dyn Fn(T) + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct ListenerSet<T>
-    where T: Send
+where
+    T: Send,
 {
     listeners: Arc<Mutex<ListenerMap<T>>>,
 }
 
-impl<T> ListenerSet<T> where T: Send + Clone
+impl<T> ListenerSet<T>
+where
+    T: Send + Clone,
 {
     pub fn new() -> Self {
-        ListenerSet { listeners: Arc::new(Mutex::new(ListenerMap::new())) }
+        ListenerSet {
+            listeners: Arc::new(Mutex::new(ListenerMap::new())),
+        }
     }
 
     pub fn subscribe<Listener: Fn(T) + Send + 'static>(&self, listener: Listener) -> Subscription {
@@ -61,7 +66,7 @@ impl<T> ListenerSet<T> where T: Send + Clone
 
 #[cfg(test)]
 mod tests {
-    use super::{ListenerSet};
+    use super::ListenerSet;
     use std::sync::mpsc;
 
     #[test]
@@ -87,7 +92,7 @@ mod tests {
         assert_eq!(ls.len(), 1);
 
         ls.notify(&true);
-        assert_eq!(rx.recv().is_ok(), true);
+        assert!(rx.recv().is_ok());
     }
 
     #[test]
@@ -100,6 +105,6 @@ mod tests {
         assert_eq!(ls.len(), 0);
 
         ls.notify(&true);
-        assert_eq!(rx.recv().is_err(), true);
+        assert!(rx.recv().is_err());
     }
 }

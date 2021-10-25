@@ -3,8 +3,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 
-use tracing_subscriber;
-
 pub struct ZkCluster {
     process: Child,
     pub connect_string: String,
@@ -46,12 +44,22 @@ impl ZkCluster {
 
     #[allow(dead_code)]
     pub fn kill_an_instance(&mut self) {
-        self.process.stdin.as_mut().unwrap().write(b"k").unwrap();
+        self.process
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(b"k")
+            .unwrap();
     }
 
     pub fn shutdown(&mut self) {
         if !self.closed {
-            self.process.stdin.as_mut().unwrap().write(b"q").unwrap();
+            self.process
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(b"q")
+                .unwrap();
             assert!(self.process.wait().unwrap().success());
             self.closed = true
         }
