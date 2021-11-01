@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.1.0]
+
+### Fixed
+
+- Fixed compatibility with old ZK clusters.
+
+### New
+
+- Distributed queue recipe.
+
 ## [4.0.1]
 
 ### Fixed
