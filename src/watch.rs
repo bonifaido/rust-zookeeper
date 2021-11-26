@@ -44,7 +44,7 @@ pub struct Watch {
 /// The interface for handling events when a `Watch` triggers.
 pub trait Watcher: Send {
     /// Receive the triggered event.
-    fn handle(&self, WatchedEvent);
+    fn handle(&self, event: WatchedEvent);
 }
 
 impl<F> Watcher for F where F: Fn(WatchedEvent) + Send
