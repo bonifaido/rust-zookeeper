@@ -63,26 +63,21 @@ pub struct ZkWatch<W: Watcher> {
     watcher: W,
     watches: HashMap<String, Vec<Watch>>,
     chroot: Option<String>,
-    tx: Sender<WatchMessage>,
     rx: Receiver<WatchMessage>,
 }
 
 impl<W: Watcher> ZkWatch<W> {
-    pub fn new(watcher: W, chroot: Option<String>) -> Self {
+    pub fn new(watcher: W, chroot: Option<String>) -> (Self, Sender<WatchMessage>) {
         trace!("ZkWatch::new");
         let (tx, rx) = mpsc::channel();
 
-        ZkWatch {
+        let watch = ZkWatch {
             watches: HashMap::new(),
             watcher: watcher,
             chroot: chroot,
-            tx,
             rx
-        }
-    }
-
-    pub fn sender(&self) -> Sender<WatchMessage> {
-        self.tx.clone()
+        };
+        (watch, tx)
     }
 
     pub fn run(mut self) -> io::Result<()> {
