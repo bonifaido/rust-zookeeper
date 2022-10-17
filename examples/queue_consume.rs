@@ -2,7 +2,7 @@ extern crate env_logger;
 extern crate uuid;
 extern crate zookeeper;
 
-use std::{env, sync::Arc, thread, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use zookeeper::{recipes::queue::ZkQueue, WatchedEvent, Watcher, ZooKeeper};
 
