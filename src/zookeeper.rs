@@ -68,10 +68,10 @@ impl ZooKeeper {
 
         debug!("Initiating connection to {}", connect_string);
 
-        let watch = ZkWatch::new(watcher, chroot.clone());
+        let (watch, watch_sender) = ZkWatch::new(watcher, chroot.clone());
         let listeners = ListenerSet::<ZkState>::new();
         let listeners1 = listeners.clone();
-        let io = ZkIo::new(addrs.clone(), timeout, watch.sender(), listeners1);
+        let io = ZkIo::new(addrs.clone(), timeout, watch_sender, listeners1);
         let sender = io.sender();
 
         try!(Self::zk_thread("event", move || watch.run().unwrap()));
