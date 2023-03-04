@@ -258,7 +258,7 @@ impl PathChildrenCache {
                 debug!("initialising...");
                 let result = Self::get_children(
                     zk.clone(),
-                    &*path,
+                    &path,
                     data.clone(),
                     ops_chan_tx.clone(),
                     RefreshMode::ForceGetDataAndStat,
@@ -277,14 +277,14 @@ impl PathChildrenCache {
             Operation::Refresh(mode) => {
                 debug!("getting children");
                 let result =
-                    Self::get_children(zk.clone(), &*path, data.clone(), ops_chan_tx.clone(), mode)
+                    Self::get_children(zk.clone(), &path, data.clone(), ops_chan_tx.clone(), mode)
                         .await;
                 debug!("got children {:?}", result);
             }
             Operation::GetData(path) => {
                 debug!("getting data");
                 let result =
-                    Self::update_data(zk.clone(), &*path, data.clone(), ops_chan_tx.clone()).await;
+                    Self::update_data(zk.clone(), &path, data.clone(), ops_chan_tx.clone()).await;
                 if let Err(err) = result {
                     warn!("error getting child data: {:?}", err);
                 }

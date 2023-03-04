@@ -28,7 +28,7 @@ async fn zk_example() {
     let zk_urls = zk_server_urls();
     println!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher)
+    let zk = ZooKeeper::connect(&zk_urls, Duration::from_secs(15), LoggingWatcher)
         .await
         .unwrap();
 

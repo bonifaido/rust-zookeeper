@@ -23,7 +23,7 @@ async fn main() {
     let zk_urls = zk_server_urls();
     println!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher)
+    let zk = ZooKeeper::connect(&zk_urls, Duration::from_millis(2500), NoopWatcher)
         .await
         .unwrap();
 

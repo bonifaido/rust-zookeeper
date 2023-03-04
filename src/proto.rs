@@ -104,14 +104,11 @@ impl WriteTo for String {
 impl<T: WriteTo> WriteTo for Vec<T> {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
         writer.write_i32::<BigEndian>(self.len() as i32)?;
-        let mut res = Ok(());
         for elem in self.iter() {
-            res = elem.write_to(writer);
-            if res.is_err() {
-                return res;
-            }
+            elem.write_to(writer)?;
         }
-        res
+
+        Ok(())
     }
 }
 

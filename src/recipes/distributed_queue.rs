@@ -23,7 +23,7 @@ impl DistributedQueue {
     pub async fn put(&self, data: Vec<u8>) -> ZkResult<String> {
         self.zk
             .create(
-                &*format!("{}/{}", self.path, ZK_DISTRIBUTED_QUEUE_PREFIX),
+                &format!("{}/{}", self.path, ZK_DISTRIBUTED_QUEUE_PREFIX),
                 data,
                 Acl::open_unsafe().clone(),
                 CreateMode::PersistentSequential,
@@ -86,7 +86,7 @@ impl DistributedQueue {
         Ok(match children.get(0) {
             Some(child) => Some(
                 self.zk
-                    .get_data(&*format!("{}/{}", self.path, child), false)
+                    .get_data(&format!("{}/{}", self.path, child), false)
                     .await?
                     .0,
             ),
