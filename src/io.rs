@@ -361,7 +361,7 @@ impl ZkIo {
                     }
 
                     trace!("Exiting read loop");
-                    let _ = data_tx.send(BytesMut::new());
+                    let _ = data_tx.send(BytesMut::new()).await;
                 });
             }
 
