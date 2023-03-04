@@ -84,7 +84,7 @@ impl<W: Watcher> ZkWatch<W> {
         trace!("ZkWatch::new");
         let (tx, rx) = channel(64);
 
-        let watch =ZkWatch {
+        let watch = ZkWatch {
             watches: HashMap::new(),
             watcher,
             chroot,
