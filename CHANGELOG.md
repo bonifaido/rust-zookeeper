@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.1]
+
+### Fixed
+
+- Fixed signaling exiting read loop.
+- Avoid leaking watch threads on client shutdown.
+
 ## [4.1.0]
 
 ### Fixed

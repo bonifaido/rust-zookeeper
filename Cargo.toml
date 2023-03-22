@@ -1,6 +1,6 @@
 [package]
 name = "zookeeper-async"
-version = "4.1.0"
+version = "4.1.1"
 authors = ["Kamil Rojewski <kamil.rojewski@gmail.com>", "Nandor Kracser <bonifaido@gmail.com>"]
 license = "MIT"
 homepage = "https://github.com/krojew/rust-zookeeper"
