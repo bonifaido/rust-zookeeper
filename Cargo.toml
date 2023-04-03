@@ -1,11 +1,11 @@
 [package]
-name = "zookeeper"
-version = "0.7.0"
-authors = ["Nandor Kracser <bonifaido@gmail.com>"]
+name = "zookeeper-zk"
+version = "0.7.1"
+authors = ["yansen.zk <yangsen.zk@qq.com>", "Nandor Kracser <bonifaido@gmail.com>"]
 license = "MIT"
-homepage = "https://github.com/bonifaido/rust-zookeeper"
-repository = "https://github.com/bonifaido/rust-zookeeper"
-documentation = "http://bonifaido.github.io/rust-zookeeper"
+homepage = "https://github.com/yangsenzk/rust-zookeeper"
+repository = "https://github.com/yangsenzk/rust-zookeeper"
+documentation = "https://github.com/yangsenzk/rust-zookeeper"
 description = "A minimal ZooKeeper client"
 readme = "README.md"
 keywords = ["zk", "zookeeper", "distributed", "coordination"]

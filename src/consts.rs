@@ -55,7 +55,7 @@ pub enum ZkError {
     /// than `APIError`, are system errors.
     SystemError = -1,
     /// Operation is unimplemented.
-    Unimplemented = -6
+    Unimplemented = -6,
 }
 
 impl fmt::Display for ZkError {
@@ -85,6 +85,15 @@ pub enum CreateMode {
     /// the server at some point in the future. Given this property, you should be prepared to get
     /// `ZkError::NoNode` when creating children inside of this container node.
     Container = 4,
+    /// The znode will not be automatically deleted upon client's disconnect.
+    /// However if the znode has not been modified within the given TTL, it
+    /// will be deleted once it has no children.
+    PersistentWithTTL = 5,
+    /// The znode will not be automatically deleted upon client's disconnect,
+    /// and its name will be appended with a monotonically increasing number.
+    /// However if the znode has not been modified within the given TTL, it
+    /// will be deleted once it has no children.
+    PersistentSequentialWithTTL = 6,
 }
 
 /// Enumeration of states the client may be at a Watcher Event. It represents the state of the
@@ -109,7 +118,7 @@ pub enum KeeperState {
     /// The serving cluster has expired this session. The ZooKeeper client connection (the session)
     /// is no longer valid. You must create a new client connection (instantiate a new `ZooKeeper`
     /// instance) if you with to access the ensemble.
-    Expired = -112
+    Expired = -112,
 }
 
 /// Enumeration of types of events that may occur on the znode.
@@ -132,7 +141,7 @@ pub enum WatchedEventType {
     /// Issued when the client removes a data watcher.
     DataWatchRemoved = 5,
     /// Issued when the client removes a child watcher.
-    ChildWatchRemoved = 6
+    ChildWatchRemoved = 6,
 }
 
 /// Enumeration of states the client may be at any time.

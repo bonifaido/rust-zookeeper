@@ -1,9 +1,11 @@
+use std::convert::From;
+use std::io::{Cursor, Error, ErrorKind, Read, Result, Write};
+
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
 use acl::{Acl, Permission};
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use consts::{KeeperState, WatchedEventType};
 use data::Stat;
-use std::convert::From;
-use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
 use watch::WatchedEvent;
 
 /// Operation code for messages. See `RequestHeader`.
@@ -19,6 +21,7 @@ pub enum OpCode {
     GetData = 4,
     SetData = 5,
     Ping = 11,
+    CreateTTL = 21,
     CloseSession = -11,
 }
 
@@ -78,11 +81,7 @@ impl<R: Read> StringReader for R {
 impl<R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
         let len = try!(self.read_i32::<BigEndian>());
-        let len = if len < 0 {
-            0
-        } else {
-            len as usize
-        };
+        let len = if len < 0 { 0 } else { len as usize };
         let mut buf = vec![0; len];
         let read = try!(self.read(&mut buf));
         if read == len {
@@ -194,7 +193,8 @@ impl WriteTo for ConnectRequest {
 #[derive(Debug)]
 pub struct ConnectResponse {
     protocol_version: i32,
-    pub timeout: u64, // is handled as i32
+    // is handled as i32
+    pub timeout: u64,
     pub session_id: i64,
     passwd: Vec<u8>,
     pub read_only: bool,
@@ -206,7 +206,7 @@ impl ConnectResponse {
             protocol_version: 0,
             timeout: timeout,
             session_id: 0,
-            passwd: vec![0;16],
+            passwd: vec![0; 16],
             read_only: false,
         }
     }
@@ -280,7 +280,28 @@ pub struct CreateResponse {
 
 impl ReadFrom for CreateResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<CreateResponse> {
-        Ok(CreateResponse { path: try!(reader.read_string()) })
+        Ok(CreateResponse {
+            path: try!(reader.read_string()),
+        })
+    }
+}
+
+pub struct CreateRequestWithTTL {
+    pub path: String,
+    pub data: Vec<u8>,
+    pub acl: Vec<Acl>,
+    pub flags: i32,
+    pub ttl: i64,
+}
+
+impl WriteTo for CreateRequestWithTTL {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
+        self.path.write_to(writer)?;
+        self.data.write_to(writer)?;
+        self.acl.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.flags)?;
+        writer.write_i64::<BigEndian>(self.ttl)?;
+        Ok(())
     }
 }
 
@@ -319,7 +340,9 @@ pub struct StatResponse {
 
 impl ReadFrom for StatResponse {
     fn read_from<R: Read>(read: &mut R) -> Result<StatResponse> {
-        Ok(StatResponse { stat: try!(Stat::read_from(read)) })
+        Ok(StatResponse {
+            stat: try!(Stat::read_from(read)),
+        })
     }
 }
 
@@ -345,7 +368,9 @@ impl ReadFrom for GetAclResponse {
             acl.push(try!(Acl::read_from(reader)));
         }
         let stat = try!(Stat::read_from(reader));
-        Ok(GetAclResponse { acl_stat: (acl, stat) })
+        Ok(GetAclResponse {
+            acl_stat: (acl, stat),
+        })
     }
 }
 
@@ -410,7 +435,9 @@ impl ReadFrom for GetDataResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<GetDataResponse> {
         let data = try!(reader.read_buffer());
         let stat = try!(Stat::read_from(reader));
-        Ok(GetDataResponse { data_stat: (data, stat) })
+        Ok(GetDataResponse {
+            data_stat: (data, stat),
+        })
     }
 }
 

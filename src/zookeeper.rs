@@ -1,11 +1,3 @@
-use acl::*;
-use consts::*;
-use data::*;
-use proto::*;
-use io::ZkIo;
-use listeners::{ListenerSet, Subscription};
-use mio_extras::channel::Sender as MioSender;
-use watch::{Watch, Watcher, WatchType, ZkWatch};
 use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
@@ -13,8 +5,18 @@ use std::string::ToString;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Mutex;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
+
+use mio_extras::channel::Sender as MioSender;
+
+use acl::*;
+use consts::*;
+use data::*;
+use io::ZkIo;
+use listeners::{ListenerSet, Subscription};
+use proto::*;
+use watch::{Watch, WatchType, Watcher, ZkWatch};
 
 /// Value returned from potentially-error operations.
 pub type ZkResult<T> = result::Result<T, ZkError>;
@@ -41,7 +43,8 @@ pub struct ZooKeeper {
 
 impl ZooKeeper {
     fn zk_thread<F>(name: &str, task: F) -> ZkResult<thread::JoinHandle<()>>
-        where F: FnOnce() + Send + 'static
+    where
+        F: FnOnce() + Send + 'static,
     {
         thread::Builder::new()
             .name(name.to_owned())
@@ -61,9 +64,9 @@ impl ZooKeeper {
     ///   from a server before considering it connection loss?
     /// - `watcher`: a watcher object to be notified of connection state changes.
     pub fn connect<W>(connect_string: &str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper>
-        where W: Watcher + 'static
+    where
+        W: Watcher + 'static,
     {
-
         let (addrs, chroot) = try!(Self::parse_connect_string(connect_string));
 
         debug!("Initiating connection to {}", connect_string);
@@ -89,24 +92,20 @@ impl ZooKeeper {
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
         let (chroot, end) = match connect_string.find('/') {
-            Some(start) => {
-                match &connect_string[start..connect_string.len()] {
-                    "" | "/" => (None, start),
-                    chroot => (Some(try!(Self::validate_path(chroot)).to_owned()), start),
-                }
-            }
+            Some(start) => match &connect_string[start..connect_string.len()] {
+                "" | "/" => (None, start),
+                chroot => (Some(try!(Self::validate_path(chroot)).to_owned()), start),
+            },
             None => (None, connect_string.len()),
         };
 
         let mut addrs = Vec::new();
         for addr_str in connect_string[..end].split(',') {
             let addr = match addr_str.trim().to_socket_addrs() {
-                Ok(mut addrs) => {
-                    match addrs.nth(0) {
-                        Some(addr) => addr,
-                        None => return Err(ZkError::BadArguments),
-                    }
-                }
+                Ok(mut addrs) => match addrs.nth(0) {
+                    Some(addr) => addr,
+                    None => return Err(ZkError::BadArguments),
+                },
                 Err(_) => return Err(ZkError::BadArguments),
             };
             addrs.push(addr);
@@ -119,12 +118,13 @@ impl ZooKeeper {
         self.xid.fetch_add(1, Ordering::Relaxed) as i32
     }
 
-    fn request<Req: WriteTo, Resp: ReadFrom>(&self,
-                                             opcode: OpCode,
-                                             xid: i32,
-                                             req: Req,
-                                             watch: Option<Watch>)
-                                             -> ZkResult<Resp> {
+    fn request<Req: WriteTo, Resp: ReadFrom>(
+        &self,
+        opcode: OpCode,
+        xid: i32,
+        req: Req,
+        watch: Option<Watch>,
+    ) -> ZkResult<Resp> {
         trace!("request opcode={:?} xid={:?}", opcode, xid);
         let rh = RequestHeader {
             xid: xid,
@@ -155,11 +155,10 @@ impl ZooKeeper {
         }));
 
         match response.header.err {
-            0 => {
-                Ok(try!(ReadFrom::read_from(&mut response.data)
-                            .map_err(|_| ZkError::MarshallingError)))
-            }
-            e => Err(ZkError::from(e))
+            0 => Ok(try!(
+                ReadFrom::read_from(&mut response.data).map_err(|_| ZkError::MarshallingError)
+            )),
+            e => Err(ZkError::from(e)),
         }
     }
 
@@ -178,12 +177,10 @@ impl ZooKeeper {
 
     fn path(&self, path: &str) -> ZkResult<String> {
         match self.chroot {
-            Some(ref chroot) => {
-                match path {
-                    "/" => Ok(chroot.clone()),
-                    path => Ok(chroot.clone() + try!(Self::validate_path(path))),
-                }
-            }
+            Some(ref chroot) => match path {
+                "/" => Ok(chroot.clone()),
+                path => Ok(chroot.clone() + try!(Self::validate_path(path))),
+            },
             None => Ok(try!(Self::validate_path(path)).to_owned()),
         }
     }
@@ -235,12 +232,13 @@ impl ZooKeeper {
     ///
     /// The maximum allowable size of the data array is 1 MiB (1,048,576 bytes). Arrays larger than
     /// this will return `Err(ZkError::BadArguments)`.
-    pub fn create(&self,
-                  path: &str,
-                  data: Vec<u8>,
-                  acl: Vec<Acl>,
-                  mode: CreateMode)
-                  -> ZkResult<String> {
+    pub fn create(
+        &self,
+        path: &str,
+        data: Vec<u8>,
+        acl: Vec<Acl>,
+        mode: CreateMode,
+    ) -> ZkResult<String> {
         trace!("ZooKeeper::create");
         let req = CreateRequest {
             path: self.path(path)?,
@@ -254,6 +252,25 @@ impl ZooKeeper {
         Ok(self.cut_chroot(response.path))
     }
 
+    pub fn create_with_ttl(
+        &self,
+        path: &str,
+        data: Vec<u8>,
+        acl: Vec<Acl>,
+        mode: CreateMode,
+        ttl: i64,
+    ) -> ZkResult<String> {
+        trace!("Zookeeper::create_with_ttl");
+        let req = CreateRequestWithTTL {
+            path: self.path(path)?,
+            data,
+            acl,
+            flags: mode as i32,
+            ttl,
+        };
+        let response: CreateResponse = self.request(OpCode::CreateTTL, self.xid(), req, None)?;
+        Ok(self.cut_chroot(response.path))
+    }
     /// Delete the node with the given `path`. The call will succeed if such a node exists, and the
     /// given `version` matches the node's version (if the given version is `None`, it matches any
     /// node's versions).
@@ -304,10 +321,7 @@ impl ZooKeeper {
     ///
     /// Similar to `exists`, but sets an explicit `Watcher` instead of relying on the client's base
     /// `Watcher`.
-    pub fn exists_w<W: Watcher + 'static>(&self,
-                                          path: &str,
-                                          watcher: W)
-                                          -> ZkResult<Option<Stat>> {
+    pub fn exists_w<W: Watcher + 'static>(&self, path: &str, watcher: W) -> ZkResult<Option<Stat>> {
         trace!("ZooKeeper::exists_w");
         let req = ExistsRequest {
             path: try!(self.path(path)),
@@ -320,10 +334,12 @@ impl ZooKeeper {
             watcher: Box::new(watcher),
         };
 
-        match self.request::<ExistsRequest, ExistsResponse>(OpCode::Exists,
-                                                            self.xid(),
-                                                            req,
-                                                            Some(watch)) {
+        match self.request::<ExistsRequest, ExistsResponse>(
+            OpCode::Exists,
+            self.xid(),
+            req,
+            Some(watch),
+        ) {
             Ok(response) => Ok(Some(response.stat)),
             Err(ZkError::NoNode) => Ok(None),
             Err(e) => Err(e),
@@ -336,7 +352,9 @@ impl ZooKeeper {
     /// If no node with the given path exists, `Err(ZkError::NoNode)` will be returned.
     pub fn get_acl(&self, path: &str) -> ZkResult<(Vec<Acl>, Stat)> {
         trace!("ZooKeeper::get_acl");
-        let req = GetAclRequest { path: try!(self.path(path)) };
+        let req = GetAclRequest {
+            path: try!(self.path(path)),
+        };
 
         let response: GetAclResponse = try!(self.request(OpCode::GetAcl, self.xid(), req, None));
 
@@ -384,10 +402,8 @@ impl ZooKeeper {
             watch: watch,
         };
 
-        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren,
-                                                              self.xid(),
-                                                              req,
-                                                              None));
+        let response: GetChildrenResponse =
+            try!(self.request(OpCode::GetChildren, self.xid(), req, None));
 
         Ok(response.children)
     }
@@ -396,10 +412,11 @@ impl ZooKeeper {
     ///
     /// Similar to `get_children`, but sets an explicit `Watcher` instead of relying on the client's
     /// base `Watcher`.
-    pub fn get_children_w<W: Watcher + 'static>(&self,
-                                                path: &str,
-                                                watcher: W)
-                                                -> ZkResult<Vec<String>> {
+    pub fn get_children_w<W: Watcher + 'static>(
+        &self,
+        path: &str,
+        watcher: W,
+    ) -> ZkResult<Vec<String>> {
         trace!("ZooKeeper::get_children_w");
         let req = GetChildrenRequest {
             path: try!(self.path(path)),
@@ -412,10 +429,8 @@ impl ZooKeeper {
             watcher: Box::new(watcher),
         };
 
-        let response: GetChildrenResponse = try!(self.request(OpCode::GetChildren,
-                                                              self.xid(),
-                                                              req,
-                                                              Some(watch)));
+        let response: GetChildrenResponse =
+            try!(self.request(OpCode::GetChildren, self.xid(), req, Some(watch)));
 
         Ok(response.children)
     }
@@ -444,10 +459,11 @@ impl ZooKeeper {
     ///
     /// Similar to `get_data`, but sets an explicit `Watcher` instead of relying on the client's
     /// base `Watcher`.
-    pub fn get_data_w<W: Watcher + 'static>(&self,
-                                            path: &str,
-                                            watcher: W)
-                                            -> ZkResult<(Vec<u8>, Stat)> {
+    pub fn get_data_w<W: Watcher + 'static>(
+        &self,
+        path: &str,
+        watcher: W,
+    ) -> ZkResult<(Vec<u8>, Stat)> {
         trace!("ZooKeeper::get_data_w");
         let req = GetDataRequest {
             path: try!(self.path(path)),
@@ -460,10 +476,8 @@ impl ZooKeeper {
             watcher: Box::new(watcher),
         };
 
-        let response: GetDataResponse = try!(self.request(OpCode::GetData,
-                                                          self.xid(),
-                                                          req,
-                                                          Some(watch)));
+        let response: GetDataResponse =
+            try!(self.request(OpCode::GetData, self.xid(), req, Some(watch)));
 
         Ok(response.data_stat)
     }
@@ -498,9 +512,10 @@ impl ZooKeeper {
 
     /// Adds a state change `Listener`, which will be notified of changes to the client's `ZkState`.
     /// A unique identifier is returned, which is used in `remove_listener` to un-subscribe.
-    pub fn add_listener<Listener: Fn(ZkState) + Send + 'static>(&self,
-                                                                listener: Listener)
-                                                                -> Subscription {
+    pub fn add_listener<Listener: Fn(ZkState) + Send + 'static>(
+        &self,
+        listener: Listener,
+    ) -> Subscription {
         trace!("ZooKeeper::add_listener");
         self.listeners.subscribe(listener)
     }
@@ -541,30 +556,48 @@ mod tests {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
         let (addrs, chroot) = ZooKeeper::parse_connect_string("127.0.0.1:2181,::1:2181/mesos")
-                                  .ok()
-                                  .expect("Parse 1");
-        assert_eq!(addrs,
-                   vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 2181)),
-                        SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
-                                                         2181,
-                                                         0,
-                                                         0))]);
+            .ok()
+            .expect("Parse 1");
+        assert_eq!(
+            addrs,
+            vec![
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 2181)),
+                SocketAddr::V6(SocketAddrV6::new(
+                    Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
+                    2181,
+                    0,
+                    0,
+                )),
+            ]
+        );
         assert_eq!(chroot, Some("/mesos".to_owned()));
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181").ok().expect("Parse 2");
-        assert_eq!(addrs,
-                   vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
-                                                         2181,
-                                                         0,
-                                                         0))]);
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181")
+            .ok()
+            .expect("Parse 2");
+        assert_eq!(
+            addrs,
+            vec![SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
+                2181,
+                0,
+                0,
+            ))]
+        );
         assert_eq!(chroot, None);
 
-        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181/").ok().expect("Parse 3");
-        assert_eq!(addrs,
-                   vec![SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
-                                                         2181,
-                                                         0,
-                                                         0))]);
+        let (addrs, chroot) = ZooKeeper::parse_connect_string("::1:2181/")
+            .ok()
+            .expect("Parse 3");
+        assert_eq!(
+            addrs,
+            vec![SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
+                2181,
+                0,
+                0,
+            ))]
+        );
         assert_eq!(chroot, None);
     }
 

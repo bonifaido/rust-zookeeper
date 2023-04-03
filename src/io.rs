@@ -1,23 +1,24 @@
 use consts::{ZkError, ZkState};
-use proto::{ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader,
-            WriteTo};
-use watch::WatchMessage;
-use zookeeper::{RawResponse, RawRequest};
 use listeners::ListenerSet;
+use proto::{
+    ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader, WriteTo,
+};
+use watch::WatchMessage;
+use zookeeper::{RawRequest, RawResponse};
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, Bytes, BytesMut};
 use mio::net::TcpStream;
 use mio::*;
-use mio_extras::channel::{Sender, Receiver, channel};
-use mio_extras::timer::{Timer, Timeout};
+use mio_extras::channel::{channel, Receiver, Sender};
+use mio_extras::timer::{Timeout, Timer};
 use std::collections::VecDeque;
 use std::io;
 use std::io::{Cursor, ErrorKind};
-use std::net::SocketAddr;
-use std::time::{Duration, Instant};
-use std::sync::mpsc;
 use std::mem;
+use std::net::SocketAddr;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 const ZK: Token = Token(1);
 const TIMER: Token = Token(2);
@@ -26,8 +27,12 @@ const CHANNEL: Token = Token(3);
 use try_io::{TryRead, TryWrite};
 
 lazy_static! {
-    static ref PING: ByteBuf =
-    RequestHeader{xid: -2, opcode: OpCode::Ping}.to_len_prefixed_buf().unwrap();
+    static ref PING: ByteBuf = RequestHeader {
+        xid: -2,
+        opcode: OpCode::Ping
+    }
+    .to_len_prefixed_buf()
+    .unwrap();
 }
 
 struct Hosts {
@@ -94,11 +99,11 @@ impl ZkIo {
         addrs: Vec<SocketAddr>,
         ping_timeout_duration: Duration,
         watch_sender: mpsc::Sender<WatchMessage>,
-        state_listeners: ListenerSet<ZkState>
+        state_listeners: ListenerSet<ZkState>,
     ) -> ZkIo {
         trace!("ZkIo::new");
-        let timeout_ms = ping_timeout_duration.as_secs() * 1000 +
-            ping_timeout_duration.subsec_nanos() as u64 / 1000000;
+        let timeout_ms = ping_timeout_duration.as_secs() * 1000
+            + ping_timeout_duration.subsec_nanos() as u64 / 1000000;
         let (tx, rx) = channel();
 
         let mut zkio = ZkIo {
@@ -154,7 +159,11 @@ impl ZkIo {
 
             let len = BigEndian::read_i32(&self.response[..4]) as usize;
 
-            trace!("Response chunk len = {} buf len is {}", len, self.response.len());
+            trace!(
+                "Response chunk len = {} buf len is {}",
+                len,
+                self.response.len()
+            );
 
             if self.response.len() - 4 < len {
                 return;
@@ -194,27 +203,26 @@ impl ZkIo {
             match response.header.xid {
                 -1 => {
                     trace!("handle_response Got a watch event!");
-                    self.watch_sender.send(WatchMessage::Event(response)).unwrap();
+                    self.watch_sender
+                        .send(WatchMessage::Event(response))
+                        .unwrap();
                 }
                 -2 => {
-                    trace!("Got ping response in {:?}",
-                           self.ping_sent.elapsed());
+                    trace!("Got ping response in {:?}", self.ping_sent.elapsed());
                     self.inflight.pop_front();
                 }
-                _ => {
-                    match self.inflight.pop_front() {
-                        Some(request) => {
-                            if request.opcode == OpCode::CloseSession {
-                                let old_state = self.state;
-                                self.state = ZkState::Closed;
-                                self.notify_state(old_state, self.state);
-                                self.shutdown = true;
-                            }
-                            self.send_response(request, response);
+                _ => match self.inflight.pop_front() {
+                    Some(request) => {
+                        if request.opcode == OpCode::CloseSession {
+                            let old_state = self.state;
+                            self.state = ZkState::Closed;
+                            self.notify_state(old_state, self.state);
+                            self.shutdown = true;
                         }
-                        None => panic!("Shouldn't happen, no inflight request"),
+                        self.send_response(request, response);
                     }
-                }
+                    None => panic!("Shouldn't happen, no inflight request"),
+                },
             }
         } else {
             self.inflight.pop_front(); // drop the connect request
@@ -266,12 +274,8 @@ impl ZkIo {
 
     fn clear_timeout(&mut self, atype: ZkTimeout) {
         let timeout = match atype {
-            ZkTimeout::Ping => {
-                mem::replace(&mut self.ping_timeout , None)
-            },
-            ZkTimeout::Connect => {
-                mem::replace(&mut self.conn_timeout , None)
-            },
+            ZkTimeout::Ping => mem::replace(&mut self.ping_timeout, None),
+            ZkTimeout::Connect => mem::replace(&mut self.conn_timeout, None),
         };
         if let Some(timeout) = timeout {
             trace!("clear_timeout: {:?}", atype);
@@ -286,13 +290,14 @@ impl ZkIo {
             ZkTimeout::Ping => {
                 let duration = self.ping_timeout_duration.clone();
                 self.ping_timeout = Some(self.timer.set_timeout(duration, atype));
-            },
+            }
             ZkTimeout::Connect => {
                 let duration = self.conn_timeout_duration.clone();
                 self.conn_timeout = Some(self.timer.set_timeout(duration, atype));
-            },
+            }
         }
-        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
+        self.poll
+            .reregister(&self.timer, TIMER, Ready::readable(), pollopt())
             .expect("Reregister TIMER");
     }
 
@@ -338,10 +343,10 @@ impl ZkIo {
             let request = self.connect_request();
             self.buffer.push_back(request);
 
-
             // Register the new socket
             let pollopt = PollOpt::edge() | PollOpt::oneshot();
-            self.poll.register(&self.sock, ZK, Ready::all(), pollopt)
+            self.poll
+                .register(&self.sock, ZK, Ready::all(), pollopt)
                 .expect("Register ZK");
 
             break;
@@ -391,16 +396,16 @@ impl ZkIo {
                         }
                     }
                     Ok(None) => trace!("Spurious write"),
-                    Err(e) => {
-                        match e.kind() {
-                            ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
-                            _ => {
-                                error!("Failed to write socket: {:?}", e);
-                                self.reconnect();
-                                return;
-                            }
+                    Err(e) => match e.kind() {
+                        ErrorKind::WouldBlock => {
+                            trace!("Got WouldBlock IO Error, no need to reconnect.")
                         }
-                    }
+                        _ => {
+                            error!("Failed to write socket: {:?}", e);
+                            self.reconnect();
+                            return;
+                        }
+                    },
                 }
             }
         }
@@ -417,18 +422,17 @@ impl ZkIo {
                     self.handle_response();
                 }
                 Ok(None) => trace!("Spurious read"),
-                Err(e) => {
-                    match e.kind() {
-                        ErrorKind::WouldBlock => trace!("Got WouldBlock IO Error, no need to reconnect."),
-                        _ => {
-                            error!("Failed to read socket: {:?}", e);
-                            self.reconnect();
-                            return;
-                        }
+                Err(e) => match e.kind() {
+                    ErrorKind::WouldBlock => {
+                        trace!("Got WouldBlock IO Error, no need to reconnect.")
                     }
-                }
+                    _ => {
+                        error!("Failed to read socket: {:?}", e);
+                        self.reconnect();
+                        return;
+                    }
+                },
             }
-
         }
 
         if (ready.is_hup()) && (self.state != ZkState::Closed) {
@@ -485,18 +489,19 @@ impl ZkIo {
                         data: ByteBuf::new(vec![]),
                     };
                     self.send_response(request, response);
-                },
+                }
                 _ => {
                     // Otherwise, queue request for processing.
                     if self.buffer.is_empty() {
                         self.reregister(Ready::all());
                     }
                     self.buffer.push_back(request);
-                },
+                }
             }
         }
 
-        self.poll.reregister(&self.rx, CHANNEL, Ready::readable(), pollopt())
+        self.poll
+            .reregister(&self.rx, CHANNEL, Ready::readable(), pollopt())
             .expect("Reregister CHANNEL");
     }
 
@@ -511,15 +516,17 @@ impl ZkIo {
                     if self.inflight.is_empty() {
                         // No inflight request indicates an idle connection. Send a ping.
                         trace!("Pinging {:?}", self.sock.peer_addr().unwrap());
-                        self.tx.send(RawRequest {
-                            opcode: OpCode::Ping,
-                            data: PING.clone(),
-                            listener: None,
-                            watch: None,
-                        }).unwrap();
+                        self.tx
+                            .send(RawRequest {
+                                opcode: OpCode::Ping,
+                                data: PING.clone(),
+                                listener: None,
+                                watch: None,
+                            })
+                            .unwrap();
                         self.ping_sent = Instant::now();
                     }
-                },
+                }
                 Some(ZkTimeout::Connect) => {
                     trace!("handle connection timeout");
                     self.clear_timeout(ZkTimeout::Connect);
@@ -527,11 +534,12 @@ impl ZkIo {
                         info!("Reconnect due to connection timeout");
                         self.reconnect();
                     }
-                },
+                }
                 None => {
                     if self.ping_timeout.is_some() || self.conn_timeout.is_some() {
                         trace!("Spurious timer");
-                        self.poll.reregister(&self.timer, TIMER, Ready::readable(), pollopt())
+                        self.poll
+                            .reregister(&self.timer, TIMER, Ready::readable(), pollopt())
                             .expect("Reregister TIMER");
                     }
                     break;
@@ -548,11 +556,14 @@ impl ZkIo {
         let mut events = Events::with_capacity(128);
 
         // Register Initial Interest
-        self.poll.register(&self.sock, ZK, Ready::all(), pollopt())
+        self.poll
+            .register(&self.sock, ZK, Ready::all(), pollopt())
             .expect("Register ZK");
-        self.poll.register(&self.timer, TIMER, Ready::readable(), pollopt())
+        self.poll
+            .register(&self.timer, TIMER, Ready::readable(), pollopt())
             .expect("Register TIMER");
-        self.poll.register(&self.rx, CHANNEL, Ready::readable(), pollopt())
+        self.poll
+            .register(&self.rx, CHANNEL, Ready::readable(), pollopt())
             .expect("Register CHANNEL");
 
         loop {
