@@ -1,8 +1,9 @@
-use acl::*;
-use consts::{CreateMode, ZkError};
-use zookeeper::{ZkResult, ZooKeeper};
-use std::iter::once;
 use std::collections::VecDeque;
+use std::iter::once;
+
+use crate::acl::*;
+use crate::consts::{CreateMode, ZkError};
+use crate::zookeeper::{ZkResult, ZooKeeper};
 
 /// Extended ZooKeeper operations that are not needed for the "core."
 pub trait ZooKeeperExt {
@@ -24,10 +25,10 @@ impl ZooKeeperExt for ZooKeeper {
     fn ensure_path(&self, path: &str) -> ZkResult<()> {
         trace!("ensure_path {}", path);
         for (i, _) in path.chars()
-                          .chain(once('/'))
-                          .enumerate()
-                          .skip(1)
-                          .filter(|c| c.1 == '/') {
+            .chain(once('/'))
+            .enumerate()
+            .skip(1)
+            .filter(|c| c.1 == '/') {
             match self.create(&path[..i],
                               vec![],
                               Acl::open_unsafe().clone(),

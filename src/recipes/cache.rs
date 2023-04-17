@@ -1,16 +1,17 @@
 //! Caching mechanisms.
-use std::thread;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
-use std::collections::HashMap;
-use consts::{WatchedEventType, ZkError, ZkState};
-use data::Stat;
-use paths::make_path;
-use watch::WatchedEvent;
-use zookeeper::{ZkResult, ZooKeeper};
-use zookeeper_ext::ZooKeeperExt;
-use listeners::{ListenerSet, Subscription};
+use std::thread;
+
+use crate::consts::{WatchedEventType, ZkError, ZkState};
+use crate::data::Stat;
+use crate::listeners::{ListenerSet, Subscription};
+use crate::paths::make_path;
+use crate::watch::WatchedEvent;
+use crate::zookeeper::{ZkResult, ZooKeeper};
+use crate::zookeeper_ext::ZooKeeperExt;
 
 /// Data contents of a znode and associated `Stat`.
 pub type ChildData = Arc<(Vec<u8>, Stat)>;
@@ -76,7 +77,7 @@ impl PathChildrenCache {
     pub fn new(zk: Arc<ZooKeeper>, path: &str) -> ZkResult<PathChildrenCache> {
         let data = Arc::new(Mutex::new(HashMap::new()));
 
-        try!(zk.ensure_path(path));
+        zk.ensure_path(path)?;
 
         Ok(PathChildrenCache {
             path: Arc::new(path.to_owned()),
@@ -111,7 +112,7 @@ impl PathChildrenCache {
             };
         };
 
-        let children = try!(zk.get_children_w(&path, watcher));
+        let children = zk.get_children_w(&path, watcher)?;
 
         let mut data_locked = data.lock().unwrap();
 
@@ -119,7 +120,6 @@ impl PathChildrenCache {
             let child_path = make_path(path, child);
 
             if mode == RefreshMode::ForceGetDataAndStat || !data_locked.contains_key(&child_path) {
-
                 let child_data = Arc::new(Self::get_data(zk.clone(),
                                                          &child_path,
                                                          data.clone(),
@@ -127,10 +127,10 @@ impl PathChildrenCache {
 
                 data_locked.insert(child_path.clone(), child_data.clone());
 
-                try!(ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildAdded(child_path, child_data))).map_err(|err| {
+                ops_chan.send(Operation::Event(PathChildrenCacheEvent::ChildAdded(child_path, child_data))).map_err(|err| {
                     info!("error sending ChildAdded event: {:?}", err);
                     ZkError::APIError
-                }));
+                })?;
             }
         }
 
@@ -192,10 +192,10 @@ impl PathChildrenCache {
 
                 ops_chan_tx.send(Operation::Event(PathChildrenCacheEvent::ChildUpdated(path,
                                                                                        child_data)))
-                           .map_err(|err| {
-                               warn!("error sending ChildUpdated event: {:?}", err);
-                               ZkError::APIError
-                           })
+                    .map_err(|err| {
+                        warn!("error sending ChildUpdated event: {:?}", err);
+                        ZkError::APIError
+                    })
             }
             Err(err) => {
                 warn!("error getting child data: {:?}", err);
@@ -220,7 +220,7 @@ impl PathChildrenCache {
         debug!("zk state change {:?}", state);
         if let ZkState::Connected = state {
             if let Err(err) =
-                   ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
+                ops_chan_tx.send(Operation::Refresh(RefreshMode::ForceGetDataAndStat)) {
                 warn!("error sending Refresh to op channel: {:?}", err);
                 done = true;
             }

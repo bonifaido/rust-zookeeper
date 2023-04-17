@@ -3,10 +3,10 @@ use std::io::{Cursor, Error, ErrorKind, Read, Result, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use acl::{Acl, Permission};
-use consts::{KeeperState, WatchedEventType};
-use data::Stat;
-use watch::WatchedEvent;
+use super::acl::{Acl, Permission};
+use super::consts::{KeeperState, WatchedEventType};
+use super::data::Stat;
+use super::watch::WatchedEvent;
 
 /// Operation code for messages. See `RequestHeader`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,10 +37,10 @@ pub trait WriteTo {
     fn to_len_prefixed_buf(&self) -> Result<ByteBuf> {
         let mut buf = Cursor::new(Vec::new());
         buf.set_position(4);
-        try!(self.write_to(&mut buf));
+        self.write_to(&mut buf)?;
         let len = buf.position() - 4;
         buf.set_position(0);
-        try!(buf.write_i32::<BigEndian>(len as i32));
+        buf.write_i32::<BigEndian>(len as i32)?;
         buf.set_position(0);
         Ok(buf)
     }
@@ -49,11 +49,11 @@ pub trait WriteTo {
 pub fn to_len_prefixed_buf<Request: WriteTo>(rh: RequestHeader, req: Request) -> Result<ByteBuf> {
     let mut buf = Cursor::new(Vec::new());
     buf.set_position(4);
-    try!(rh.write_to(&mut buf));
-    try!(req.write_to(&mut buf));
+    rh.write_to(&mut buf)?;
+    req.write_to(&mut buf)?;
     let len = buf.position() - 4;
     buf.set_position(0);
-    try!(buf.write_i32::<BigEndian>(len as i32));
+    buf.write_i32::<BigEndian>(len as i32)?;
     buf.set_position(0);
     Ok(buf)
 }
@@ -72,7 +72,7 @@ pub trait BufferReader: Read {
 
 impl<R: Read> StringReader for R {
     fn read_string(&mut self) -> Result<String> {
-        let raw = try!(self.read_buffer());
+        let raw = self.read_buffer()?;
         Ok(String::from_utf8(raw).unwrap())
     }
 }
@@ -80,10 +80,10 @@ impl<R: Read> StringReader for R {
 // A buffer is an u8 string prefixed with it's length as i32
 impl<R: Read> BufferReader for R {
     fn read_buffer(&mut self) -> Result<Vec<u8>> {
-        let len = try!(self.read_i32::<BigEndian>());
+        let len = self.read_i32::<BigEndian>()?;
         let len = if len < 0 { 0 } else { len as usize };
         let mut buf = vec![0; len];
-        let read = try!(self.read(&mut buf));
+        let read = self.read(&mut buf)?;
         if read == len {
             Ok(buf)
         } else {
@@ -94,21 +94,21 @@ impl<R: Read> BufferReader for R {
 
 impl WriteTo for u8 {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_u8(*self));
+        writer.write_u8(*self)?;
         Ok(())
     }
 }
 
 impl WriteTo for String {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.len() as i32));
+        writer.write_i32::<BigEndian>(self.len() as i32)?;
         writer.write_all(self.as_ref())
     }
 }
 
 impl<T: WriteTo> WriteTo for Vec<T> {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.len() as i32));
+        writer.write_i32::<BigEndian>(self.len() as i32)?;
         let mut res = Ok(());
         for elem in self.iter() {
             res = elem.write_to(writer);
@@ -141,17 +141,17 @@ impl WriteTo for Acl {
 impl ReadFrom for Stat {
     fn read_from<R: Read>(read: &mut R) -> Result<Stat> {
         Ok(Stat {
-            czxid: try!(read.read_i64::<BigEndian>()),
-            mzxid: try!(read.read_i64::<BigEndian>()),
-            ctime: try!(read.read_i64::<BigEndian>()),
-            mtime: try!(read.read_i64::<BigEndian>()),
-            version: try!(read.read_i32::<BigEndian>()),
-            cversion: try!(read.read_i32::<BigEndian>()),
-            aversion: try!(read.read_i32::<BigEndian>()),
-            ephemeral_owner: try!(read.read_i64::<BigEndian>()),
-            data_length: try!(read.read_i32::<BigEndian>()),
-            num_children: try!(read.read_i32::<BigEndian>()),
-            pzxid: try!(read.read_i64::<BigEndian>()),
+            czxid: read.read_i64::<BigEndian>()?,
+            mzxid: read.read_i64::<BigEndian>()?,
+            ctime: read.read_i64::<BigEndian>()?,
+            mtime: read.read_i64::<BigEndian>()?,
+            version: read.read_i32::<BigEndian>()?,
+            cversion: read.read_i32::<BigEndian>()?,
+            aversion: read.read_i32::<BigEndian>()?,
+            ephemeral_owner: read.read_i64::<BigEndian>()?,
+            data_length: read.read_i32::<BigEndian>()?,
+            num_children: read.read_i32::<BigEndian>()?,
+            pzxid: read.read_i64::<BigEndian>()?,
         })
     }
 }
@@ -180,12 +180,12 @@ impl ConnectRequest {
 
 impl WriteTo for ConnectRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.protocol_version));
-        try!(writer.write_i64::<BigEndian>(self.last_zxid_seen));
-        try!(writer.write_i32::<BigEndian>(self.timeout));
-        try!(writer.write_i64::<BigEndian>(self.session_id));
-        try!(self.passwd.write_to(writer));
-        try!(writer.write_u8(self.read_only as u8));
+        writer.write_i32::<BigEndian>(self.protocol_version)?;
+        writer.write_i64::<BigEndian>(self.last_zxid_seen)?;
+        writer.write_i32::<BigEndian>(self.timeout)?;
+        writer.write_i64::<BigEndian>(self.session_id)?;
+        self.passwd.write_to(writer)?;
+        writer.write_u8(self.read_only as u8)?;
         Ok(())
     }
 }
@@ -215,10 +215,10 @@ impl ConnectResponse {
 impl ReadFrom for ConnectResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<ConnectResponse> {
         Ok(ConnectResponse {
-            protocol_version: try!(reader.read_i32::<BigEndian>()),
-            timeout: try!(reader.read_i32::<BigEndian>()) as u64,
-            session_id: try!(reader.read_i64::<BigEndian>()),
-            passwd: try!(reader.read_buffer()),
+            protocol_version: reader.read_i32::<BigEndian>()?,
+            timeout: reader.read_i32::<BigEndian>()? as u64,
+            session_id: reader.read_i64::<BigEndian>()?,
+            passwd: reader.read_buffer()?,
             // Old zookeeper server doesn't have the "readonly" field, see also
             //
             //  https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/ClientCnxnSocket.java#L143-L154
@@ -234,8 +234,8 @@ pub struct RequestHeader {
 
 impl WriteTo for RequestHeader {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.xid));
-        try!(writer.write_i32::<BigEndian>(self.opcode as i32));
+        writer.write_i32::<BigEndian>(self.xid)?;
+        writer.write_i32::<BigEndian>(self.opcode as i32)?;
         Ok(())
     }
 }
@@ -250,9 +250,9 @@ pub struct ReplyHeader {
 impl ReadFrom for ReplyHeader {
     fn read_from<R: Read>(read: &mut R) -> Result<ReplyHeader> {
         Ok(ReplyHeader {
-            xid: try!(read.read_i32::<BigEndian>()),
-            zxid: try!(read.read_i64::<BigEndian>()),
-            err: try!(read.read_i32::<BigEndian>()),
+            xid: read.read_i32::<BigEndian>()?,
+            zxid: read.read_i64::<BigEndian>()?,
+            err: read.read_i32::<BigEndian>()?,
         })
     }
 }
@@ -266,10 +266,10 @@ pub struct CreateRequest {
 
 impl WriteTo for CreateRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(self.path.write_to(writer));
-        try!(self.data.write_to(writer));
-        try!(self.acl.write_to(writer));
-        try!(writer.write_i32::<BigEndian>(self.flags));
+        self.path.write_to(writer)?;
+        self.data.write_to(writer)?;
+        self.acl.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.flags)?;
         Ok(())
     }
 }
@@ -281,7 +281,7 @@ pub struct CreateResponse {
 impl ReadFrom for CreateResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<CreateResponse> {
         Ok(CreateResponse {
-            path: try!(reader.read_string()),
+            path: reader.read_string()?,
         })
     }
 }
@@ -312,8 +312,8 @@ pub struct DeleteRequest {
 
 impl WriteTo for DeleteRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(self.path.write_to(writer));
-        try!(writer.write_i32::<BigEndian>(self.version));
+        self.path.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.version)?;
         Ok(())
     }
 }
@@ -325,8 +325,8 @@ pub struct StringAndBoolRequest {
 
 impl WriteTo for StringAndBoolRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(self.path.write_to(writer));
-        try!(writer.write_u8(self.watch as u8));
+        self.path.write_to(writer)?;
+        writer.write_u8(self.watch as u8)?;
         Ok(())
     }
 }
@@ -341,7 +341,7 @@ pub struct StatResponse {
 impl ReadFrom for StatResponse {
     fn read_from<R: Read>(read: &mut R) -> Result<StatResponse> {
         Ok(StatResponse {
-            stat: try!(Stat::read_from(read)),
+            stat: Stat::read_from(read)?,
         })
     }
 }
@@ -362,12 +362,12 @@ pub struct GetAclResponse {
 
 impl ReadFrom for GetAclResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<GetAclResponse> {
-        let len = try!(reader.read_i32::<BigEndian>());
+        let len = reader.read_i32::<BigEndian>()?;
         let mut acl = Vec::with_capacity(len as usize);
         for _ in 0..len {
-            acl.push(try!(Acl::read_from(reader)));
+            acl.push(Acl::read_from(reader)?);
         }
-        let stat = try!(Stat::read_from(reader));
+        let stat = Stat::read_from(reader)?;
         Ok(GetAclResponse {
             acl_stat: (acl, stat),
         })
@@ -382,9 +382,9 @@ pub struct SetAclRequest {
 
 impl WriteTo for SetAclRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(self.path.write_to(writer));
-        try!(self.acl.write_to(writer));
-        try!(writer.write_i32::<BigEndian>(self.version));
+        self.path.write_to(writer)?;
+        self.acl.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.version)?;
         Ok(())
     }
 }
@@ -399,9 +399,9 @@ pub struct SetDataRequest {
 
 impl WriteTo for SetDataRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(self.path.write_to(writer));
-        try!(self.data.write_to(writer));
-        try!(writer.write_i32::<BigEndian>(self.version));
+        self.path.write_to(writer)?;
+        self.data.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.version)?;
         Ok(())
     }
 }
@@ -416,10 +416,10 @@ pub struct GetChildrenResponse {
 
 impl ReadFrom for GetChildrenResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<GetChildrenResponse> {
-        let len = try!(reader.read_i32::<BigEndian>());
+        let len = reader.read_i32::<BigEndian>()?;
         let mut children = Vec::with_capacity(len as usize);
         for _ in 0..len {
-            children.push(try!(reader.read_string()));
+            children.push(reader.read_string()?);
         }
         Ok(GetChildrenResponse { children: children })
     }
@@ -433,8 +433,8 @@ pub struct GetDataResponse {
 
 impl ReadFrom for GetDataResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<GetDataResponse> {
-        let data = try!(reader.read_buffer());
-        let stat = try!(Stat::read_from(reader));
+        let data = reader.read_buffer()?;
+        let stat = Stat::read_from(reader)?;
         Ok(GetDataResponse {
             data_stat: (data, stat),
         })
@@ -449,13 +449,14 @@ pub struct AuthRequest {
 
 impl WriteTo for AuthRequest {
     fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
-        try!(writer.write_i32::<BigEndian>(self.typ));
-        try!(self.scheme.write_to(writer));
+        writer.write_i32::<BigEndian>(self.typ)?;
+        self.scheme.write_to(writer)?;
         self.auth.write_to(writer)
     }
 }
 
 pub struct EmptyRequest;
+
 pub struct EmptyResponse;
 
 impl WriteTo for EmptyRequest {
@@ -472,9 +473,9 @@ impl ReadFrom for EmptyResponse {
 
 impl ReadFrom for WatchedEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<WatchedEvent> {
-        let type_raw = try!(reader.read_i32::<BigEndian>());
-        let state_raw = try!(reader.read_i32::<BigEndian>());
-        let path = try!(reader.read_string());
+        let type_raw = reader.read_i32::<BigEndian>()?;
+        let state_raw = reader.read_i32::<BigEndian>()?;
+        let path = reader.read_string()?;
         let event_type = WatchedEventType::from(type_raw);
         let state = KeeperState::from(state_raw);
         Ok(WatchedEvent {

@@ -1,10 +1,11 @@
-use consts::{KeeperState, WatchedEventType};
-use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
-use proto::ReadFrom;
-use zookeeper::RawResponse;
-use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
 use std::io;
+use std::sync::mpsc::{self, Receiver, Sender};
+
+use crate::consts::{KeeperState, WatchedEventType};
+use crate::consts::WatchedEventType::{NodeChildrenChanged, NodeCreated, NodeDataChanged, NodeDeleted};
+use crate::proto::ReadFrom;
+use crate::zookeeper::RawResponse;
 
 /// Represents a change on the ZooKeeper that a `Watcher` is able to respond to.
 ///
@@ -75,7 +76,7 @@ impl<W: Watcher> ZkWatch<W> {
             watches: HashMap::new(),
             watcher: watcher,
             chroot: chroot,
-            rx
+            rx,
         };
         (watch, tx)
     }
@@ -135,7 +136,6 @@ impl<W: Watcher> ZkWatch<W> {
         if let Some(ref path) = event.path {
             match self.watches.remove(path) {
                 Some(watches) => {
-
                     let (matching, left): (_, Vec<Watch>) = watches.into_iter().partition(|w| {
                         match event.event_type {
                             NodeChildrenChanged => w.watch_type == WatchType::Child,
