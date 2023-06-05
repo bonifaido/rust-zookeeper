@@ -17,6 +17,7 @@ enum State {
     Latent = 0,
     Started = 1,
     Closed = 2,
+    Failed = 3,
 }
 
 impl PartialEq<u8> for State {
@@ -31,6 +32,7 @@ impl From<u8> for State {
             0 => State::Latent,
             1 => State::Started,
             2 => State::Closed,
+            3 => State::Failed,
             _ => unreachable!(),
         }
     }
@@ -77,6 +79,7 @@ pub struct LeaderLatch {
     state: Arc<AtomicU8>,
     subscription: Arc<Mutex<Option<Subscription>>>,
     has_leadership: Arc<AtomicBool>,
+    error: Arc<Mutex<Option<ZkError>>>,
 }
 
 impl LeaderLatch {
@@ -89,6 +92,7 @@ impl LeaderLatch {
             state: Arc::new(AtomicU8::new(State::Latent as u8)),
             subscription: Arc::default(),
             has_leadership: Arc::default(),
+            error: Arc::default(),
         }
     }
 
@@ -141,9 +145,12 @@ impl LeaderLatch {
     }
 
     pub fn stop(&self) -> ZkResult<()> {
-        let prev_state = self.set_state(State::Started, State::Closed);
+        let mut prev_state = self.set_state(State::Started, State::Closed);
         if prev_state != State::Started {
-            panic!("cannot close leader latch in state: {:?}", self.state);
+            prev_state = self.set_state(State::Failed, State::Closed);
+            if prev_state != State::Failed {
+                panic!("cannot close leader latch in state: {:?}", self.state);
+            }
         }
 
         self.set_path(None)?;
@@ -164,9 +171,24 @@ impl LeaderLatch {
         self.path.lock().unwrap().clone()
     }
 
-    pub fn has_leadership(&self) -> bool {
-        State::Started == self.state.load(atomic::Ordering::SeqCst)
-            && self.has_leadership.load(atomic::Ordering::SeqCst)
+    pub fn has_leadership(&self) -> ZkResult<bool> {
+        match State::from(self.state.load(atomic::Ordering::SeqCst)) {
+            State::Started => {
+                Ok(self.has_leadership.load(atomic::Ordering::SeqCst))
+            }
+            State::Failed => {
+                let zk_error = &*self.error.lock().unwrap();
+                match zk_error {
+                    None => {
+                        Ok(false)
+                    }
+                    Some(e) => {
+                        Err(e.clone())
+                    }
+                }
+            }
+            _ => Ok(false)
+        }
     }
 
     fn set_leadership(&self, value: bool) {
@@ -190,6 +212,17 @@ impl LeaderLatch {
             self.state
                 .compare_and_swap(cur as u8, new as u8, atomic::Ordering::SeqCst),
         )
+    }
+
+    fn become_failed(&self, zk_error: ZkError) {
+        log::warn!("set state to Failed, the error is: {:?}", zk_error);
+        let prev_state = self.set_state(State::Started, State::Failed);
+        if prev_state != State::Started {
+            panic!("cannot start leader latch in state: {:?}", prev_state);
+        }
+        // set the error message to the latch
+        let error = &mut *self.error.lock().unwrap();
+        *error = Some(zk_error);
     }
 }
 
@@ -244,12 +277,11 @@ fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
     if let WatchedEventType::NodeDeleted = ev.event_type {
         log::info!("receive {:?}, the path {:?}", ev.event_type, ev.path);
         if let Err(e) = latch.check_leadership() {
-            // TODO: how to do if got error when check leader ship:
-            // 1. this latch has created the znode in the zk server
-            // 2. when `check_leadership`, meet some issues about network or other issues
-            // 3. this latch will lost the role of leader, and other latch can't become the leader
             log::error!("failed to check for leadership: {:?}", e);
             latch.set_leadership(false);
+            // change the latch state to failed
+            // this is should be handled by user
+            latch.become_failed(e);
         }
     }
 }
