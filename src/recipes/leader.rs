@@ -121,14 +121,15 @@ impl LeaderLatch {
         if let Some(path) = &*self.path.lock().unwrap() {
             match znodes.iter().position(|znode| &znode.path == path) {
                 Some(0) => {
+                    log::info!("become the leader");
                     self.set_leadership(true);
                 }
                 Some(index) => {
+                    self.set_leadership(false);
                     let latch = self.clone();
                     self.zk.exists_w(&znodes[index - 1].path, move |ev| {
                         handle_znode_change(&latch, ev)
                     })?;
-                    self.set_leadership(false);
                 }
                 None => {
                     log::error!("cannot find znode: {:?}", path);
@@ -241,7 +242,12 @@ fn ensure_path(zk: &ZooKeeper, path: &str) -> ZkResult<()> {
 
 fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
     if let WatchedEventType::NodeDeleted = ev.event_type {
+        log::info!("receive {:?}, the path {:?}", ev.event_type, ev.path);
         if let Err(e) = latch.check_leadership() {
+            // TODO: how to do if got error when check leader ship:
+            // 1. this latch has created the znode in the zk server
+            // 2. when `check_leadership`, meet some issues about network or other issues
+            // 3. this latch will lost the role of leader, and other latch can't become the leader
             log::error!("failed to check for leadership: {:?}", e);
             latch.set_leadership(false);
         }
@@ -250,6 +256,7 @@ fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
 
 fn handle_state_change(latch: &LeaderLatch, zk_state: ZkState) {
     if let ZkState::Closed = zk_state {
+        log::warn!("got the {:?} with zookeeper", zk_state);
         latch.set_leadership(false);
     }
 }
