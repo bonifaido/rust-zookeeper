@@ -37,7 +37,7 @@ fn main() {
     latch.start().unwrap();
 
     loop {
-        if latch.has_leadership() {
+        if latch.has_leadership().unwrap() {
             log::info!("{:?} is the leader", id);
         } else {
             log::info!("{:?} is a follower", id);

@@ -23,10 +23,10 @@ fn leader_latch_test() -> ZkResult<()> {
     let latch2 = LeaderLatch::new(Arc::clone(&zk), id2, latch_path.into());
 
     latch1.start().unwrap();
-    assert!(latch1.has_leadership());
+    assert!(latch1.has_leadership().unwrap());
 
     latch2.start().unwrap();
-    assert!(!latch2.has_leadership());
+    assert!(!latch2.has_leadership().unwrap());
 
     let latch1_path = latch1.path().unwrap();
     let latch2_path = latch2.path().unwrap();
@@ -35,14 +35,14 @@ fn leader_latch_test() -> ZkResult<()> {
     assert!(zk.exists(&latch1_path, false)?.is_none());
     assert!(zk.exists(&latch2_path, false)?.is_some());
 
-    assert!(!latch1.has_leadership());
+    assert!(!latch1.has_leadership().unwrap());
 
     // Need to wait for leadership to propogate to latch2.
     thread::sleep(Duration::from_secs(1));
-    assert!(latch2.has_leadership());
+    assert!(latch2.has_leadership().unwrap());
 
     latch2.stop()?;
-    assert!(!latch2.has_leadership());
+    assert!(!latch2.has_leadership().unwrap());
 
     zk.delete(latch_path, None)?;
     Ok(())
@@ -64,9 +64,9 @@ fn leader_latch_test_disconnect() -> ZkResult<()> {
     let latch = LeaderLatch::new(Arc::clone(&zk), id, latch_path.into());
 
     latch.start().unwrap();
-    assert!(latch.has_leadership());
+    assert!(latch.has_leadership().unwrap());
 
     zk.close()?;
-    assert!(!latch.has_leadership());
+    assert!(!latch.has_leadership().unwrap());
     Ok(())
 }
