@@ -292,7 +292,9 @@ fn handle_znode_change(latch: &LeaderLatch, ev: WatchedEvent) {
 
 fn handle_state_change(latch: &LeaderLatch, zk_state: ZkState) {
     if let ZkState::Closed = zk_state {
-        log::warn!("got the {:?} with zookeeper", zk_state);
+        log::warn!("got the {:?} with zookeeper, and need to set LeaderLatch to Failed", zk_state);
         latch.set_leadership(false);
+        let error = ZkError::ConnectionLoss;
+        latch.become_failed(error);
     }
 }
