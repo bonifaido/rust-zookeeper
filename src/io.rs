@@ -218,9 +218,9 @@ impl ZkIo {
             let conn_resp = match ConnectResponse::read_from(&mut data) {
                 Ok(conn_resp) => conn_resp,
                 Err(e) => {
-                    panic!("Failed to parse ConnectResponse {:?}", e);
-                    // self.reconnect();
-                    // return
+                    error!("Failed to parse ConnectResponse {:?}", e);
+                    self.reconnect();
+                    return;
                 }
             };
 
