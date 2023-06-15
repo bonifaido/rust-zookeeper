@@ -136,8 +136,13 @@ impl LeaderLatch {
                     })?;
                 }
                 None => {
+                    // the path doesn't exist in the path of dir
                     log::error!("cannot find znode: {:?}", path);
-                    self.reset()?;
+                    // can't call `reset`, the path will be deadlocked.
+                    // self.reset()?;
+
+                    // return error, and should be handled by callerre
+                    return Err(ZkError::NoNode);
                 }
             }
         }
