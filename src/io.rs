@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use consts::{ZkError, ZkState};
 use proto::{ByteBuf, ConnectRequest, ConnectResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader,
             WriteTo};
@@ -57,6 +58,10 @@ impl Hosts {
         }
         addr
     }
+
+    fn size(&self) -> usize {
+        self.addrs.len()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -88,17 +93,27 @@ pub struct ZkIo {
     tx: Sender<RawRequest>,
     rx: Receiver<RawRequest>,
 }
+const MAX_INTERVAL_PING_MS : u64 = 10000;
+const MIN_INTERVAL_CONNECT_SERVER_MS : u64 = 10000;
 
 impl ZkIo {
     pub fn new(
         addrs: Vec<SocketAddr>,
-        ping_timeout_duration: Duration,
+        session_timeout_duration: Duration,
         watch_sender: mpsc::Sender<WatchMessage>,
         state_listeners: ListenerSet<ZkState>
     ) -> ZkIo {
         trace!("ZkIo::new");
-        let timeout_ms = ping_timeout_duration.as_secs() * 1000 +
-            ping_timeout_duration.subsec_nanos() as u64 / 1000000;
+        let timeout_ms = session_timeout_duration.as_secs() * 1000 +
+            session_timeout_duration.subsec_nanos() as u64 / 1000000;
+        // min interval for connect timeout is 10s
+        let conn_timeout_duration = Duration::from_millis(max(timeout_ms / addrs.len() as u64,
+                                                              MIN_INTERVAL_CONNECT_SERVER_MS));
+        // max interval for ping is 10s
+        let ping_timeout_duration = Duration::from_millis(min(timeout_ms / 3,
+                                                              MAX_INTERVAL_PING_MS));
+        info!("Init the io event:  expected session timeout {:?}, connect timeout {:?}, ping timeout {:?}",
+            session_timeout_duration, conn_timeout_duration, ping_timeout_duration);
         let (tx, rx) = channel();
 
         let mut zkio = ZkIo {
@@ -113,7 +128,8 @@ impl ZkIo {
             ping_timeout: None,
             conn_timeout: None,
             ping_timeout_duration,
-            conn_timeout_duration: Duration::from_secs(2),
+            conn_timeout_duration,
+            // conn_timeout_duration: Duration::from_secs(2),
             timeout_ms,
             watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
@@ -192,10 +208,12 @@ impl ZkIo {
                 data: Cursor::new(data.bytes().to_vec()),
             }; // TODO COPY!
             match response.header.xid {
+                // NOTIFICATION_XID
                 -1 => {
                     trace!("handle_response Got a watch event!");
                     self.watch_sender.send(WatchMessage::Event(response)).unwrap();
                 }
+                // PING_XID
                 -2 => {
                     let ping_time_cost = self.ping_sent.elapsed();
                     if ping_time_cost.as_millis() > (self.timeout_ms / 4) as u128 {
@@ -240,17 +258,25 @@ impl ZkIo {
             };
 
             let old_state = self.state;
-
-            if conn_resp.timeout == 0 {
-                info!("session {} expired", self.conn_resp.session_id);
+            if conn_resp.timeout <= 0 {
+                // we don't get the right timeout from the server, and should close the connection.
+                warn!("Unable to connect the session {} expired when get the zero or negative timeout",
+                    self.conn_resp.session_id);
                 self.conn_resp.session_id = 0;
-                self.state = ZkState::NotConnected;
-                warn!("Set the io event state to {:?}", ZkState::NotConnected);
+                self.state = ZkState::Closed;
             } else {
+                // created the new connection from the server
                 self.conn_resp = conn_resp;
                 info!("Connected: {:?}", self.conn_resp);
                 self.timeout_ms = self.conn_resp.timeout;
-                self.ping_timeout_duration = Duration::from_millis(self.conn_resp.timeout / 3 * 2);
+                self.conn_timeout_duration = Duration::from_millis(max(self.timeout_ms / self.hosts.size() as u64,
+                                                                       MIN_INTERVAL_CONNECT_SERVER_MS));
+                self.ping_timeout_duration = Duration::from_millis(min(self.timeout_ms / 3,
+                                                                       MAX_INTERVAL_PING_MS));
+
+                info!("Io event create the connection with server successfully, \
+                with session timeout {:?}, connect timeout {:?}, ping timeout {:?}",
+                    Duration::from_millis(self.timeout_ms), self.conn_timeout_duration, self.ping_timeout_duration);
 
                 self.state = if self.conn_resp.read_only {
                     ZkState::ConnectedReadOnly
@@ -308,8 +334,16 @@ impl ZkIo {
             .expect("Reregister TIMER");
     }
 
+    fn is_alive(&self) -> bool {
+        self.state != ZkState::Closed && self.state != ZkState::AuthFailed
+    }
+
     fn reconnect(&mut self) {
         trace!("reconnect");
+        if !self.is_alive() {
+            // can't create the new connection after switch to the not alive
+            panic!("The io event state is not alive, can't reconnect the server");
+        }
         let old_state = self.state;
         self.state = ZkState::Connecting;
         self.notify_state(old_state, self.state);
@@ -453,12 +487,13 @@ impl ZkIo {
             //         Err(e) => panic!("Reader/Writer: Event died {}", e)
             //     }
             // }
+
+            error!("Want to set the io event state to {:?}, but set it to close and panic", ZkState::NotConnected);
             let old_state = self.state;
-            self.state = ZkState::NotConnected;
+            self.state = ZkState::Closed;
             self.notify_state(old_state, self.state);
-            warn!("Set the io event state to {:?}", ZkState::NotConnected);
             info!("Reconnect due to HUP");
-            self.reconnect();
+            // self.reconnect();
         }
 
         if self.is_idle() {
@@ -518,7 +553,7 @@ impl ZkIo {
         loop {
             match self.timer.poll() {
                 Some(ZkTimeout::Ping) => {
-                    trace!("handle ping timeout");
+                    info!("handle ping timeout");
                     self.clear_timeout(ZkTimeout::Ping);
                     if self.inflight.is_empty() {
                         // No inflight request indicates an idle connection. Send a ping.
@@ -533,7 +568,7 @@ impl ZkIo {
                     }
                 },
                 Some(ZkTimeout::Connect) => {
-                    trace!("handle connection timeout");
+                    info!("handle connection timeout");
                     self.clear_timeout(ZkTimeout::Connect);
                     if self.state == ZkState::Connecting {
                         info!("Reconnect due to connection timeout");

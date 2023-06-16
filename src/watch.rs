@@ -2,7 +2,7 @@ use consts::{KeeperState, WatchedEventType};
 use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
 use proto::ReadFrom;
 use zookeeper::RawResponse;
-use std::sync::mpsc::{self, Sender, Receiver, RecvError};
+use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
 use std::io;
 

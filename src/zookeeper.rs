@@ -57,10 +57,10 @@ impl ZooKeeper {
     ///   where the client would be rooted at `"/app/a"` and all paths would be relative to this
     ///   root -- ie getting/setting/etc...`"/foo/bar"` would result in operations being run on
     ///   `"/app/a/foo/bar"` (from the server perspective).
-    /// - `timeout`: session timeout -- how long should a client go without receiving communication
+    /// - `session_timeout`: session timeout -- how long should a client go without receiving communication
     ///   from a server before considering it connection loss?
     /// - `watcher`: a watcher object to be notified of connection state changes.
-    pub fn connect<W>(connect_string: &str, timeout: Duration, watcher: W) -> ZkResult<ZooKeeper>
+    pub fn connect<W>(connect_string: &str, session_timeout: Duration, watcher: W) -> ZkResult<ZooKeeper>
         where W: Watcher + 'static
     {
 
@@ -71,7 +71,7 @@ impl ZooKeeper {
         let (watch, watch_sender) = ZkWatch::new(watcher, chroot.clone());
         let listeners = ListenerSet::<ZkState>::new();
         let listeners1 = listeners.clone();
-        let io = ZkIo::new(addrs.clone(), timeout, watch_sender, listeners1);
+        let io = ZkIo::new(addrs.clone(), session_timeout, watch_sender, listeners1);
         let sender = io.sender();
 
         try!(Self::zk_thread("event", move || watch.run().unwrap()));
