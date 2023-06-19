@@ -10,7 +10,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::sleep;
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
+use tokio::time::{sleep, timeout};
 use tracing::*;
 
 use crate::listeners::ListenerSet;
@@ -79,6 +81,8 @@ pub struct ZkIo {
     connect_rx: Option<Receiver<()>>,
     data_tx: Sender<BytesMut>,
     data_rx: Option<Receiver<BytesMut>>,
+    recv_task_jh: Option<JoinHandle<()>>,
+    recv_task_tx: Option<broadcast::Sender<()>>,
 }
 
 #[derive(Clone, Debug)]
@@ -130,6 +134,8 @@ impl ZkIo {
             connect_rx: Some(connect_rx),
             data_tx,
             data_rx: Some(data_rx),
+            recv_task_jh: None,
+            recv_task_tx: None,
         };
 
         zkio.reconnect().await;
@@ -219,7 +225,7 @@ impl ZkIo {
                 Ok(conn_resp) => conn_resp,
                 Err(e) => {
                     error!("Failed to parse ConnectResponse {:?}", e);
-                    self.reconnect();
+                    self.reconnect().await;
                     return;
                 }
             };
@@ -331,6 +337,16 @@ impl ZkIo {
             self.clear_timeout(ZkTimeout::Connect);
 
             {
+                // notify recv task exit
+                if let Some(tx) = self.recv_task_tx.take() {
+                    tx.send(()).ok();
+                }
+
+                // wait for recv task exit
+                if let Some(h) = self.recv_task_jh.take() {
+                    h.await.ok();
+                }
+
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
                 let sock = match TcpStream::connect(host).await {
@@ -344,25 +360,38 @@ impl ZkIo {
 
                 let (mut rx, tx) = sock.into_split();
                 self.sock_tx = Some(tx);
-
+                let (task_tx, mut task_rx) = broadcast::channel::<()>(1);
+                self.recv_task_tx = Some(task_tx);
+                let time_out_sleep = self.ping_timeout_duration.as_secs() * 2;
                 let data_tx = self.data_tx.clone();
-                tokio::spawn(async move {
+                self.recv_task_jh = Some(tokio::spawn(async move {
                     let mut buf = [0u8; 4096];
-                    while let Ok(read) = rx.read(&mut buf).await {
-                        trace!("Received {:?} bytes", read);
+                    loop {
+                        tokio::select! {
+                            rd_data = rx.read(&mut buf) => if let Ok(read) = rd_data {
+                                trace!("Received {:?} bytes", read);
+                                
+                                if read == 0 {
+                                    break;
+                                }
 
-                        if data_tx.send(buf[..read].into()).await.is_err() {
-                            return;
-                        }
-
-                        if read == 0 {
-                            break;
+                                if data_tx.send(buf[..read].into()).await.is_err() {
+                                    return;
+                                }
+                            },
+                            // recv exit signal
+                            _ = task_rx.recv() => {
+                                return;
+                            },
+                            _ = sleep(Duration::from_secs(time_out_sleep)) => {
+                                error!("Reconnect due to double ping timeout.");
+                                break;
+                            }
                         }
                     }
-
                     trace!("Exiting read loop");
                     let _ = data_tx.send(BytesMut::new()).await;
-                });
+                }));
             }
 
             let request = self.connect_request();
@@ -384,13 +413,13 @@ impl ZkIo {
             watch: None,
         }
     }
-
+    
     async fn write_data(&mut self) {
         if let Some(tx) = self.sock_tx.as_mut() {
             while let Some(request) = self.buffer.pop_front() {
                 trace!("Writing data: {:?}", request.opcode);
-                match tx.write_all(request.data.chunk()).await {
-                    Ok(()) => {
+                match timeout(self.ping_timeout_duration, tx.write_all(request.data.chunk())).await {
+                    Ok(Ok(())) => {
                         if request.opcode == OpCode::CloseSession {
                             let old_state = self.state;
                             self.state = ZkState::Closed;
@@ -414,6 +443,11 @@ impl ZkIo {
                         }
 
                         self.inflight.push_back(request);
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to write socket: {:?}", e);
+                        self.reconnect().await;
+                        return;
                     }
                     Err(e) => {
                         error!("Failed to write socket: {:?}", e);
