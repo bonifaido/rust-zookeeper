@@ -2,7 +2,7 @@ use consts::{KeeperState, WatchedEventType};
 use consts::WatchedEventType::{NodeCreated, NodeDataChanged, NodeDeleted, NodeChildrenChanged};
 use proto::ReadFrom;
 use zookeeper::RawResponse;
-use std::sync::mpsc::{self, Sender, Receiver, RecvError};
+use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
 use std::io;
 
@@ -81,16 +81,11 @@ impl<W: Watcher> ZkWatch<W> {
     }
 
     pub fn run(mut self) -> io::Result<()> {
-        loop {
-            match self.rx.recv() {
-                Ok(msg) => {
-                    self.process_message(msg);
-                }
-                Err(e) => {
-                    error!("Meet the error when receive watch event loop: {:?}", e);
-                }
-            }
+        while let Ok(msg) = self.rx.recv() {
+            self.process_message(msg);
         }
+        info!("End of the zk watcher event loop");
+        Ok(())
     }
 
     fn process_message(&mut self, message: WatchMessage) {
