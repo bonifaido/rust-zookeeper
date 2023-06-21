@@ -353,6 +353,8 @@ impl ZkIo {
                     Ok(sock) => sock,
                     Err(e) => {
                         error!("Failed to connect {:?}: {:?}", host, e);
+                        //retry too fast, sleep 1s
+                        sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
@@ -418,8 +420,8 @@ impl ZkIo {
         if let Some(tx) = self.sock_tx.as_mut() {
             while let Some(request) = self.buffer.pop_front() {
                 trace!("Writing data: {:?}", request.opcode);
-                match timeout(self.ping_timeout_duration, tx.write_all(request.data.chunk())).await {
-                    Ok(Ok(())) => {
+                match tx.write_all(request.data.chunk()).await {
+                    Ok(()) => {
                         if request.opcode == OpCode::CloseSession {
                             let old_state = self.state;
                             self.state = ZkState::Closed;
@@ -443,11 +445,6 @@ impl ZkIo {
                         }
 
                         self.inflight.push_back(request);
-                    }
-                    Ok(Err(e)) => {
-                        error!("Failed to write socket: {:?}", e);
-                        self.reconnect().await;
-                        return;
                     }
                     Err(e) => {
                         error!("Failed to write socket: {:?}", e);
