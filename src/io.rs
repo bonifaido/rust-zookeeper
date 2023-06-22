@@ -12,7 +12,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use tracing::*;
 
 use crate::listeners::ListenerSet;
@@ -67,6 +67,7 @@ pub struct ZkIo {
     timeout_ms: u64,
     ping_timeout_duration: Duration,
     conn_timeout_duration: Duration,
+    retry_time_duration: Duration,
     watch_sender: Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
@@ -95,6 +96,7 @@ impl ZkIo {
     pub async fn new(
         addrs: Vec<SocketAddr>,
         ping_timeout_duration: Duration,
+        retry_time_duration: Duration,
         watch_sender: Sender<WatchMessage>,
         state_listeners: ListenerSet<ZkState>,
     ) -> ZkIo {
@@ -136,6 +138,7 @@ impl ZkIo {
             data_rx: Some(data_rx),
             recv_task_jh: None,
             recv_task_tx: None,
+            retry_time_duration,
         };
 
         zkio.reconnect().await;
@@ -353,8 +356,9 @@ impl ZkIo {
                     Ok(sock) => sock,
                     Err(e) => {
                         error!("Failed to connect {:?}: {:?}", host, e);
-                        //retry too fast, sleep 1s
-                        sleep(Duration::from_secs(1)).await;
+                        if !self.retry_time_duration.is_zero() {
+                            sleep(self.retry_time_duration).await;
+                        }
                         continue;
                     }
                 };
