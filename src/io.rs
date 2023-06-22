@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::broadcast;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::*;
@@ -376,7 +376,7 @@ impl ZkIo {
                         tokio::select! {
                             rd_data = rx.read(&mut buf) => if let Ok(read) = rd_data {
                                 trace!("Received {:?} bytes", read);
-                                
+
                                 if read == 0 {
                                     break;
                                 }
@@ -419,7 +419,7 @@ impl ZkIo {
             watch: None,
         }
     }
-    
+
     async fn write_data(&mut self) {
         if let Some(tx) = self.sock_tx.as_mut() {
             while let Some(request) = self.buffer.pop_front() {
