@@ -69,10 +69,12 @@ impl ZooKeeper {
     /// - `timeout`: session timeout -- how long should a client go without receiving communication
     ///   from a server before considering it connection loss?
     /// - `watcher`: a watcher object to be notified of connection state changes.
-    pub async fn connect<W>(
+    /// - `retry_time`: when the connection is lost, reconnect for a longer time to avoid reconnecting too quickly
+    pub async fn connect_with<W>(
         connect_string: &str,
         timeout: Duration,
         watcher: W,
+        retry_time: Duration,
     ) -> ZkResult<ZooKeeper>
     where
         W: Watcher + 'static,
@@ -84,7 +86,7 @@ impl ZooKeeper {
         let (watch, watch_sender) = ZkWatch::new(watcher, chroot.clone());
         let listeners = ListenerSet::<ZkState>::new();
         let listeners1 = listeners.clone();
-        let io = ZkIo::new(addrs.clone(), timeout, watch_sender, listeners1).await;
+        let io = ZkIo::new(addrs.clone(), timeout, retry_time, watch_sender, listeners1).await;
         let sender = io.sender();
 
         tokio::spawn(watch.run());
@@ -99,6 +101,17 @@ impl ZooKeeper {
             io: Mutex::new(sender),
             listeners,
         })
+    }
+
+    pub async fn connect<W>(
+        connect_string: &str,
+        timeout: Duration,
+        watcher: W,
+    ) -> ZkResult<ZooKeeper>
+    where
+        W: Watcher + 'static,
+    {
+        Self::connect_with(connect_string, timeout, watcher, Duration::from_secs(0)).await
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {
