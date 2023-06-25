@@ -4,6 +4,7 @@ use proto::ReadFrom;
 use zookeeper::RawResponse;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::io;
 
 /// Represents a change on the ZooKeeper that a `Watcher` is able to respond to.
@@ -21,7 +22,7 @@ pub struct WatchedEvent {
 }
 
 /// Describes what a `Watch` is looking for.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum WatchType {
     /// Watching for changes to children.
     Child,
@@ -39,6 +40,12 @@ pub struct Watch {
     pub watch_type: WatchType,
     /// The handler for this watch, to call when it is triggered.
     pub watcher: Box<dyn Watcher>,
+}
+
+impl Debug for Watch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Watch patch {:?}, Watch type: {:?}", self.path, self.watch_type)
+    }
 }
 
 /// The interface for handling events when a `Watch` triggers.
