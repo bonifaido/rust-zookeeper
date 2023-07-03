@@ -69,8 +69,9 @@ impl ZooKeeper {
     /// - `timeout`: session timeout -- how long should a client go without receiving communication
     ///   from a server before considering it connection loss?
     /// - `watcher`: a watcher object to be notified of connection state changes.
-    /// - `retry_time`: when the connection is lost, reconnect for a longer time to avoid reconnecting too quickly
-    pub async fn connect_with<W>(
+    /// - `retry_time`: when the connection is lost, reconnect for a longer time to avoid
+    ///   reconnecting too quickly
+    pub async fn connect_with_retry_time<W>(
         connect_string: &str,
         timeout: Duration,
         watcher: W,
@@ -111,7 +112,8 @@ impl ZooKeeper {
     where
         W: Watcher + 'static,
     {
-        Self::connect_with(connect_string, timeout, watcher, Duration::from_secs(0)).await
+        Self::connect_with_retry_time(connect_string, timeout, watcher, Duration::from_secs(0))
+            .await
     }
 
     fn parse_connect_string(connect_string: &str) -> ZkResult<(Vec<SocketAddr>, Option<String>)> {

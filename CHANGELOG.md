@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.2.0]
+
+### Fixed
+
+- Leak when reconnecting (by tsxiaofang).
+
+### Changed
+
+- Trying to reconnect when failed to parse connect response (by tsxiaofang).
+
+### New
+
+-`connect_with_retry_time()` function for specifying retry timeout.
+
 ## [4.1.1]
 
 ### Fixed
