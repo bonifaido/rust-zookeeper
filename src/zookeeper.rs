@@ -5,7 +5,7 @@ use proto::*;
 use io::ZkIo;
 use listeners::{ListenerSet, Subscription};
 use mio_extras::channel::Sender as MioSender;
-use watch::{Watch, Watcher, WatchType, ZkWatch};
+use watch::{Watch, Watcher, ZkWatch};
 use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::result;
@@ -15,6 +15,7 @@ use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Mutex;
 use std::time::Duration;
 use std::thread;
+
 
 /// Value returned from potentially-error operations.
 pub type ZkResult<T> = result::Result<T, ZkError>;
@@ -316,7 +317,7 @@ impl ZooKeeper {
 
         let watch = Watch {
             path: path.to_owned(),
-            watch_type: WatchType::Exist,
+            watcher_type: WatcherType::Data,
             watcher: Box::new(watcher),
         };
 
@@ -408,7 +409,7 @@ impl ZooKeeper {
 
         let watch = Watch {
             path: path.to_owned(),
-            watch_type: WatchType::Child,
+            watcher_type: WatcherType::Children,
             watcher: Box::new(watcher),
         };
 
@@ -456,7 +457,7 @@ impl ZooKeeper {
 
         let watch = Watch {
             path: path.to_owned(),
-            watch_type: WatchType::Data,
+            watcher_type: WatcherType::Data,
             watcher: Box::new(watcher),
         };
 
@@ -494,6 +495,53 @@ impl ZooKeeper {
         let response: SetDataResponse = try!(self.request(OpCode::SetData, self.xid(), req, None));
 
         Ok(response.stat)
+    }
+
+    /// Add a watch to the given znode using the given mode. Note: not all
+    /// watch types can be set with this method. Only the modes available
+    /// in WatchMode can be set with this method.
+    /// Requires Zookeeper 3.6.0
+    pub fn add_watch<W: Watcher + 'static>(&self,
+                                           path: &str,
+                                           mode: AddWatchMode,
+                                           watcher: W)
+                                           -> ZkResult<()> {
+
+        let req = AddWatchRequest {
+            path: try!(self.path(path)),
+            mode: mode,
+        };
+
+        let watch = Watch {
+            path: path.to_owned(),
+            watcher_type: mode.into(),
+            watcher: Box::new(watcher),
+        };
+
+        try!(self.request(OpCode::AddWatch, self.xid(), req, Some(watch)));
+        Ok(())
+    }
+
+    /// Remove watches of a given type for a path.
+    pub fn remove_watches(&self,
+                          path: &str,
+                          watcher_type: WatcherType)
+                          -> ZkResult<()> {
+
+        let req = RemoveWatchesRequest {
+            path: try!(self.path(path)),
+            watcher_type: watcher_type,
+        };
+
+        // This watch is used to be able to remove local watchers.
+        let watch = Watch {
+            path: path.to_owned(),
+            watcher_type: watcher_type,
+            watcher: Box::new(|_| {}),
+        };
+
+        try!(self.request(OpCode::RemoveWatches, self.xid(), req, Some(watch)));
+        Ok(())
     }
 
     /// Adds a state change `Listener`, which will be notified of changes to the client's `ZkState`.
