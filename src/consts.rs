@@ -113,7 +113,7 @@ pub enum KeeperState {
 }
 
 /// Enumeration of types of events that may occur on the znode.
-#[derive(Clone, Copy, Debug, EnumConvertFromInt)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumConvertFromInt)]
 pub enum WatchedEventType {
     /// Nothing known has occurred on the znode. This value is issued as part of a `WatchedEvent`
     /// when the `KeeperState` changes.
@@ -133,6 +133,48 @@ pub enum WatchedEventType {
     DataWatchRemoved = 5,
     /// Issued when the client removes a child watcher.
     ChildWatchRemoved = 6
+}
+
+/// The mode of watch.
+#[derive(Clone, Copy, Debug, EnumConvertFromInt)]
+pub enum AddWatchMode {
+    /// Set a watcher on the given path that does not get removed when triggered (i.e. it stays active
+    /// until it is removed). This watcher
+    /// is triggered for both data and child events. To remove the watcher, use
+    /// remove_watches. The watcher behaves as if you placed an exists() watch and
+    /// a get_data() watch on the ZNode at the given path.
+    /// Requires Zookeeper 3.6.0
+    Persistent = 0,
+    /// Like a Persistent watcher but applies not only to the registered path but all child
+    /// paths recursively. This watcher is triggered for both data and child events.
+    /// To remove the watcher, use remove_watches().
+    /// Requires Zookeeper 3.6.0
+    PersistentRecursive = 1,
+}
+
+/// The type of watcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumConvertFromInt)]
+pub enum WatcherType {
+    Children = 1,
+    Data = 2,
+    Any = 3,
+    Persistent = 4,
+    PersistentRecursive = 5,
+}
+
+impl From<AddWatchMode> for WatcherType {
+    fn from(watch_mode: AddWatchMode) -> Self {
+        match watch_mode {
+            AddWatchMode::Persistent => Self::Persistent,
+            AddWatchMode::PersistentRecursive => Self::PersistentRecursive,
+        }
+    }
+}
+
+impl WatcherType {
+    pub fn is_persistent(&self) -> bool {
+        self == &Self::Persistent || self == &Self::PersistentRecursive
+    }
 }
 
 /// Enumeration of states the client may be at any time.

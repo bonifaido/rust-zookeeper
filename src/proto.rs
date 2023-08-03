@@ -1,6 +1,6 @@
 use acl::{Acl, Permission};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use consts::{KeeperState, WatchedEventType};
+use consts::{KeeperState, WatchedEventType, AddWatchMode, WatcherType};
 use data::Stat;
 use std::convert::From;
 use std::io::{Cursor, Read, Write, Result, Error, ErrorKind};
@@ -10,6 +10,8 @@ use watch::WatchedEvent;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OpCode {
     Auth = 100,
+    AddWatch = 106,
+    RemoveWatches = 18,
     Create = 1,
     Delete = 2,
     Exists = 3,
@@ -154,6 +156,12 @@ impl ReadFrom for Stat {
             num_children: try!(read.read_i32::<BigEndian>()),
             pzxid: try!(read.read_i64::<BigEndian>()),
         })
+    }
+}
+
+impl ReadFrom for () {
+    fn read_from<R: Read>(_: &mut R) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -411,6 +419,32 @@ impl ReadFrom for GetDataResponse {
         let data = try!(reader.read_buffer());
         let stat = try!(Stat::read_from(reader));
         Ok(GetDataResponse { data_stat: (data, stat) })
+    }
+}
+
+pub struct AddWatchRequest {
+    pub path: String,
+    pub mode: AddWatchMode,
+}
+
+impl WriteTo for AddWatchRequest {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
+        try!(self.path.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.mode as i32));
+        Ok(())
+    }
+}
+
+pub struct RemoveWatchesRequest {
+    pub path: String,
+    pub watcher_type: WatcherType,
+}
+
+impl WriteTo for RemoveWatchesRequest {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
+        try!(self.path.write_to(writer));
+        try!(writer.write_i32::<BigEndian>(self.watcher_type as i32));
+        Ok(())
     }
 }
 

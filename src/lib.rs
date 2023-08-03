@@ -13,11 +13,11 @@ extern crate snowflake;
 extern crate zookeeper_derive;
 
 pub use acl::*;
-pub use consts::*;
+pub use consts::{*, WatcherType};
 pub use data::*;
 pub use zookeeper::{ZkResult, ZooKeeper};
 pub use zookeeper_ext::ZooKeeperExt;
-pub use watch::{Watch, WatchedEvent, Watcher, WatchType};
+pub use watch::{Watch, WatchedEvent, Watcher};
 
 pub use listeners::Subscription;
 

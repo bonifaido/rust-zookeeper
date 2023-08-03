@@ -9,6 +9,7 @@ mod test_zk;
 mod test_cache;
 mod test_recursive;
 mod test_leader;
+mod test_persistent_recursive_watch;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
