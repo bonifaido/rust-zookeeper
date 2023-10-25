@@ -15,7 +15,9 @@ fn get_children_recursive_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+        None,
+    )
+    .unwrap();
 
     let tree = vec![
         "/root/a/1",
@@ -35,7 +37,8 @@ fn get_children_recursive_test() {
 
     let children = zk.get_children_recursive("/root").unwrap();
     for path in tree {
-        for (i, _) in path.chars()
+        for (i, _) in path
+            .chars()
             .chain(once('/'))
             .enumerate()
             .skip(1)
@@ -56,7 +59,9 @@ fn get_children_recursive_invalid_path_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+        None,
+    )
+    .unwrap();
 
     let result = zk.get_children_recursive("/bad");
     assert_eq!(result, Err(ZkError::NoNode))
@@ -72,7 +77,9 @@ fn get_children_recursive_only_root_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+        None,
+    )
+    .unwrap();
 
     let root = "/root";
     zk.ensure_path(root).unwrap();
@@ -90,7 +97,9 @@ fn delete_recursive_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+        None,
+    )
+    .unwrap();
 
     let tree = vec![
         "/root/a/1",
@@ -123,7 +132,9 @@ fn delete_recursive_invalid_path_test() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_: WatchedEvent| {},
-    ).unwrap();
+        None,
+    )
+    .unwrap();
 
     let result = zk.delete_recursive("/bad");
     assert_eq!(result, Err(ZkError::NoNode))

@@ -1,4 +1,4 @@
-use zookeeper::{AddWatchMode, Acl, CreateMode, WatcherType};
+use zookeeper::{Acl, AddWatchMode, CreateMode, WatcherType};
 use zookeeper::{WatchedEvent, ZooKeeper, ZooKeeperExt};
 
 use ZkCluster;
@@ -18,6 +18,7 @@ fn persistent_watch_receives_more_than_one_message_on_modifications() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
@@ -25,18 +26,25 @@ fn persistent_watch_receives_more_than_one_message_on_modifications() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
     zk_modifier.ensure_path("/base").unwrap();
 
     let (snd, rcv) = mpsc::channel::<()>();
-    zk_watcher.add_watch("/base", AddWatchMode::Persistent, move |_| {
-        snd.send(()).unwrap();
-    }).unwrap();
-    zk_modifier.set_data("/base", b"hello1".to_vec(), None).unwrap();
+    zk_watcher
+        .add_watch("/base", AddWatchMode::Persistent, move |_| {
+            snd.send(()).unwrap();
+        })
+        .unwrap();
+    zk_modifier
+        .set_data("/base", b"hello1".to_vec(), None)
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
-    zk_modifier.set_data("/base", b"hello2".to_vec(), None).unwrap();
+    zk_modifier
+        .set_data("/base", b"hello2".to_vec(), None)
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
 }
 
@@ -51,6 +59,7 @@ fn persistent_watch_does_not_receive_children_changes() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
@@ -58,6 +67,7 @@ fn persistent_watch_does_not_receive_children_changes() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
@@ -65,12 +75,18 @@ fn persistent_watch_does_not_receive_children_changes() {
     zk_modifier.ensure_path("/base/child").unwrap();
 
     let (snd, rcv) = mpsc::channel::<()>();
-    zk_watcher.add_watch("/base", AddWatchMode::Persistent, move |_| {
-        snd.send(()).unwrap();
-    }).unwrap();
-    zk_modifier.set_data("/base", b"hello1".to_vec(), None).unwrap();
+    zk_watcher
+        .add_watch("/base", AddWatchMode::Persistent, move |_| {
+            snd.send(()).unwrap();
+        })
+        .unwrap();
+    zk_modifier
+        .set_data("/base", b"hello1".to_vec(), None)
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
-    zk_modifier.set_data("/base/child", b"hello2".to_vec(), None).unwrap();
+    zk_modifier
+        .set_data("/base/child", b"hello2".to_vec(), None)
+        .unwrap();
     if rcv.recv_timeout(Duration::from_millis(100)).is_ok() {
         panic!("received unexpected event for child");
     }
@@ -87,6 +103,7 @@ fn persistent_recursive_watch_stops_receiving_updates_when_removed() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
@@ -94,19 +111,38 @@ fn persistent_recursive_watch_stops_receiving_updates_when_removed() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
     zk_modifier.ensure_path("/base").unwrap();
 
     let (snd, rcv) = mpsc::channel::<()>();
-    zk_watcher.add_watch("/base", AddWatchMode::PersistentRecursive, move |_| {
-        snd.send(()).unwrap();
-    }).unwrap();
-    zk_modifier.create("/base/child1", b"hello2".to_vec(), Acl::open_unsafe().clone(), CreateMode::Persistent).unwrap();
+    zk_watcher
+        .add_watch("/base", AddWatchMode::PersistentRecursive, move |_| {
+            snd.send(()).unwrap();
+        })
+        .unwrap();
+    zk_modifier
+        .create(
+            "/base/child1",
+            b"hello2".to_vec(),
+            Acl::open_unsafe().clone(),
+            CreateMode::Persistent,
+        )
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
-    zk_watcher.remove_watches("/base", WatcherType::Any).unwrap();
-    zk_modifier.create("/base/child2", b"hello2".to_vec(), Acl::open_unsafe().clone(), CreateMode::Persistent).unwrap();
+    zk_watcher
+        .remove_watches("/base", WatcherType::Any)
+        .unwrap();
+    zk_modifier
+        .create(
+            "/base/child2",
+            b"hello2".to_vec(),
+            Acl::open_unsafe().clone(),
+            CreateMode::Persistent,
+        )
+        .unwrap();
     if rcv.recv_timeout(Duration::from_millis(100)).is_ok() {
         panic!("received unexpected event for child");
     }
@@ -123,6 +159,7 @@ fn persistent_recursive_watch_receive_children_changes() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
@@ -130,17 +167,34 @@ fn persistent_recursive_watch_receive_children_changes() {
         &cluster.connect_string,
         Duration::from_secs(30),
         |event: WatchedEvent| info!("{:?}", event),
+        None,
     )
     .unwrap();
 
     zk_modifier.ensure_path("/base").unwrap();
 
     let (snd, rcv) = mpsc::channel::<()>();
-    zk_watcher.add_watch("/base", AddWatchMode::PersistentRecursive, move |_| {
-        snd.send(()).unwrap();
-    }).unwrap();
-    zk_modifier.create("/base/child1", b"hello2".to_vec(), Acl::open_unsafe().clone(), CreateMode::Persistent).unwrap();
+    zk_watcher
+        .add_watch("/base", AddWatchMode::PersistentRecursive, move |_| {
+            snd.send(()).unwrap();
+        })
+        .unwrap();
+    zk_modifier
+        .create(
+            "/base/child1",
+            b"hello2".to_vec(),
+            Acl::open_unsafe().clone(),
+            CreateMode::Persistent,
+        )
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
-    zk_modifier.create("/base/child2", b"hello2".to_vec(), Acl::open_unsafe().clone(), CreateMode::Persistent).unwrap();
+    zk_modifier
+        .create(
+            "/base/child2",
+            b"hello2".to_vec(),
+            Acl::open_unsafe().clone(),
+            CreateMode::Persistent,
+        )
+        .unwrap();
     rcv.recv_timeout(Duration::from_millis(100)).unwrap();
 }
