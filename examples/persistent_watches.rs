@@ -34,11 +34,11 @@ fn zk_example() {
 
     let root = format!("/example-{}", uuid::Uuid::new_v4());
     let modifying_zk =
-        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher).unwrap();
+        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher, None).unwrap();
     let recursive_watch_zk =
-        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher).unwrap();
+        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher, None).unwrap();
     let persistent_watch_zk =
-        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher).unwrap();
+        ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher, None).unwrap();
 
     // Creating separate clients to show the example where modifications to the nodes
     // take place in a different session than our own.
@@ -47,8 +47,10 @@ fn zk_example() {
     // Also separate clients per type of watch as there is a bug when creating multiple type watchers in the same
     // path in the same session
     // https://issues.apache.org/jira/browse/ZOOKEEPER-4466
-    recursive_watch_zk.add_listener(|zk_state| println!("New recursive watch ZkState is {:?}", zk_state));
-    persistent_watch_zk.add_listener(|zk_state| println!("New peristent watch ZkState is {:?}", zk_state));
+    recursive_watch_zk
+        .add_listener(|zk_state| println!("New recursive watch ZkState is {:?}", zk_state));
+    persistent_watch_zk
+        .add_listener(|zk_state| println!("New peristent watch ZkState is {:?}", zk_state));
 
     modifying_zk.ensure_path(&root).unwrap();
 
@@ -64,7 +66,9 @@ fn zk_example() {
         })
         .unwrap();
 
-    println!("press c to add and modify child, e to edit the watched node, anything else to proceed");
+    println!(
+        "press c to add and modify child, e to edit the watched node, anything else to proceed"
+    );
     let stdin = io::stdin();
     let inputs = stdin.lock().lines();
     let mut incr = 0;
@@ -82,28 +86,18 @@ fn zk_example() {
                     )
                     .unwrap();
                 modifying_zk
-                    .set_data(
-                        &child_path,
-                        b"new-data".to_vec(),
-                        None,
-                    )
+                    .set_data(&child_path, b"new-data".to_vec(), None)
                     .unwrap();
-                modifying_zk
-                    .delete(&child_path, None)
-                    .unwrap();
-            },
+                modifying_zk.delete(&child_path, None).unwrap();
+            }
             "e" => {
                 modifying_zk
-                    .set_data(
-                        &root,
-                        format!("new-data-{incr}").into_bytes(),
-                        None,
-                    )
+                    .set_data(&root, format!("new-data-{incr}").into_bytes(), None)
                     .unwrap();
             }
             other => {
                 println!("received {other}");
-                break
+                break;
             }
         }
     }

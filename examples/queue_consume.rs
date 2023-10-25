@@ -26,17 +26,18 @@ fn main() {
     let zk_urls = zk_server_urls();
     log::info!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher).unwrap();
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher, None).unwrap();
 
     let queue = ZkQueue::new(Arc::new(zk), "/testing2".to_string()).unwrap();
 
     println!("waiting for a message");
     let msg = queue.take();
     if msg.is_err() {
-        eprint!("unable to listen for message. error: {}", msg.err().unwrap().to_string())
+        eprint!(
+            "unable to listen for message. error: {}",
+            msg.err().unwrap().to_string()
+        )
     } else {
         println!("got {:?}", String::from_utf8(msg.unwrap()).unwrap());
-
     }
-
 }

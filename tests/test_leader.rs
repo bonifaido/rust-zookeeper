@@ -1,7 +1,7 @@
+use env_logger;
+use std::{sync::Arc, thread, time::Duration};
 use uuid::Uuid;
 use zookeeper::{recipes::leader::LeaderLatch, ZkResult, ZooKeeper};
-use env_logger;
-use std::{sync::Arc, time::Duration, thread};
 use ZkCluster;
 
 #[test]
@@ -14,6 +14,7 @@ fn leader_latch_test() -> ZkResult<()> {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_ev| {},
+        None,
     )?);
 
     let id1 = Uuid::new_v4().to_string();
@@ -58,6 +59,7 @@ fn leader_latch_test_disconnect() -> ZkResult<()> {
         &cluster.connect_string,
         Duration::from_secs(30),
         |_ev| {},
+        None,
     )?);
 
     let id = Uuid::new_v4().to_string();

@@ -28,7 +28,7 @@ fn main() {
     let zk_urls = zk_server_urls();
     log::info!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher).unwrap();
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_millis(2500), NoopWatcher, None).unwrap();
 
     let id = Uuid::new_v4().to_string();
     log::info!("starting host with id: {:?}", id);

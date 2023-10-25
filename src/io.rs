@@ -83,6 +83,7 @@ pub struct ZkIo {
     timeout_ms: u64,
     ping_timeout_duration: Duration,
     conn_timeout_duration: Duration,
+    keepalive: Option<Duration>,
     watch_sender: mpsc::Sender<WatchMessage>,
     conn_resp: ConnectResponse,
     zxid: i64,
@@ -100,14 +101,18 @@ impl ZkIo {
         ping_timeout_duration: Duration,
         watch_sender: mpsc::Sender<WatchMessage>,
         state_listeners: ListenerSet<ZkState>,
+        keepalive: Option<Duration>,
     ) -> ZkIo {
         trace!("ZkIo::new");
         let timeout_ms = ping_timeout_duration.as_secs() * 1000
             + ping_timeout_duration.subsec_nanos() as u64 / 1000000;
         let (tx, rx) = channel();
 
+        let sock = TcpStream::connect(&addrs[0]).unwrap(); // TODO I need a socket here, sorry.
+        sock.set_keepalive(keepalive).unwrap();
+
         let mut zkio = ZkIo {
-            sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
+            sock,
             state: ZkState::Connecting,
             hosts: Hosts::new(addrs),
             buffer: VecDeque::new(),
@@ -119,6 +124,7 @@ impl ZkIo {
             conn_timeout: None,
             ping_timeout_duration: ping_timeout_duration,
             conn_timeout_duration: Duration::from_secs(2),
+            keepalive,
             timeout_ms: timeout_ms,
             watch_sender: watch_sender,
             conn_resp: ConnectResponse::initial(timeout_ms),
@@ -273,7 +279,7 @@ impl ZkIo {
                 .send(WatchMessage::RemoveWatch(w.path, w.watcher_type))
                 .unwrap(),
             (_, Some(w)) => self.watch_sender.send(WatchMessage::Watch(w)).unwrap(),
-            (_, None) => {},
+            (_, None) => {}
         }
     }
 
@@ -335,7 +341,12 @@ impl ZkIo {
                 let host = self.hosts.get();
                 info!("Connecting to new server {:?}", host);
                 self.sock = match TcpStream::connect(host) {
-                    Ok(sock) => sock,
+                    Ok(sock) => {
+                        if let Err(e) = sock.set_keepalive(self.keepalive) {
+                            error!("Failed to set tcp-keepalive: {e}");
+                        }
+                        sock
+                    }
                     Err(e) => {
                         error!("Failed to connect {:?}: {:?}", host, e);
                         continue;

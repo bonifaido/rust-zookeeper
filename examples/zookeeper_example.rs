@@ -4,14 +4,14 @@ extern crate zookeeper;
 extern crate log;
 extern crate env_logger;
 
-use std::io;
-use std::sync::Arc;
-use std::time::Duration;
-use std::thread;
 use std::env;
+use std::io;
 use std::sync::mpsc;
-use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 use zookeeper::recipes::cache::PathChildrenCache;
+use zookeeper::{Acl, CreateMode, WatchedEvent, Watcher, ZooKeeper};
 
 struct LoggingWatcher;
 impl Watcher for LoggingWatcher {
@@ -28,12 +28,11 @@ fn zk_server_urls() -> String {
     }
 }
 
-
 fn zk_example() {
     let zk_urls = zk_server_urls();
     println!("connecting to {}", zk_urls);
 
-    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher).unwrap();
+    let zk = ZooKeeper::connect(&*zk_urls, Duration::from_secs(15), LoggingWatcher, None).unwrap();
 
     zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
 
@@ -43,10 +42,12 @@ fn zk_example() {
 
     println!("authenticated -> {:?}", auth);
 
-    let path = zk.create("/test",
-                         vec![1, 2],
-                         Acl::open_unsafe().clone(),
-                         CreateMode::Ephemeral);
+    let path = zk.create(
+        "/test",
+        vec![1, 2],
+        Acl::open_unsafe().clone(),
+        CreateMode::Ephemeral,
+    );
 
     println!("created -> {:?}", path);
 
