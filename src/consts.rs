@@ -88,11 +88,35 @@ pub enum CreateMode {
     /// the server at some point in the future. Given this property, you should be prepared to get
     /// `ZkError::NoNode` when creating children inside of this container node.
     Container = 4,
+    /// The znode will not be automatically deleted upon client's disconnect, but it will be deleted
+    /// if it has not been modified within the given TTL and has no children.
+    PersistentWithTTL = 5,
+    /// The same as `PersistentSequential`, but the znode will be deleted if it has not been
+    /// modified within the given TTL and has no children.
+    PersistentSequentialWithTTL = 6,
 }
 
 impl From<CreateMode> for String {
     fn from(value: CreateMode) -> Self {
         value.to_string()
+    }
+}
+
+impl CreateMode {
+    /// Returns `true` if the `CreateMode` is one of the sequential types.
+    pub fn is_sequential(&self) -> bool {
+        matches!(
+            self,
+            CreateMode::PersistentSequential | CreateMode::EphemeralSequential
+        )
+    }
+
+    /// Returns `true` if the `CreateMode` is one of the TTL types.
+    pub fn is_ttl(&self) -> bool {
+        matches!(
+            self,
+            CreateMode::PersistentWithTTL | CreateMode::PersistentSequentialWithTTL
+        )
     }
 }
 

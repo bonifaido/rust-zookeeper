@@ -18,6 +18,9 @@ pub enum OpCode {
     SetData = 5,
     Ping = 11,
     CloseSession = -11,
+
+    Create2 = 15,
+    CreateTtl = 21,
 }
 
 pub type ByteBuf = Cursor<Vec<u8>>;
@@ -265,6 +268,25 @@ impl WriteTo for CreateRequest {
     }
 }
 
+pub struct CreateTTLRequest {
+    pub path: String,
+    pub data: Vec<u8>,
+    pub acl: Vec<Acl>,
+    pub flags: i32,
+    pub ttl: i64,
+}
+
+impl WriteTo for CreateTTLRequest {
+    fn write_to(&self, writer: &mut dyn Write) -> Result<()> {
+        self.path.write_to(writer)?;
+        self.data.write_to(writer)?;
+        self.acl.write_to(writer)?;
+        writer.write_i32::<BigEndian>(self.flags)?;
+        writer.write_i64::<BigEndian>(self.ttl)?;
+        Ok(())
+    }
+}
+
 pub struct CreateResponse {
     pub path: String,
 }
@@ -273,6 +295,20 @@ impl ReadFrom for CreateResponse {
     fn read_from<R: Read>(reader: &mut R) -> Result<CreateResponse> {
         Ok(CreateResponse {
             path: reader.read_string()?,
+        })
+    }
+}
+
+pub struct Create2Response {
+    pub path: String,
+    pub stat: Stat,
+}
+
+impl ReadFrom for Create2Response {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Create2Response> {
+        Ok(Create2Response {
+            path: reader.read_string()?,
+            stat: Stat::read_from(reader)?,
         })
     }
 }
