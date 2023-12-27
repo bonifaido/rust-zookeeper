@@ -107,7 +107,9 @@ impl CreateMode {
     pub fn is_sequential(&self) -> bool {
         matches!(
             self,
-            CreateMode::PersistentSequential | CreateMode::EphemeralSequential
+            CreateMode::PersistentSequential
+                | CreateMode::EphemeralSequential
+                | CreateMode::PersistentSequentialWithTTL
         )
     }
 
