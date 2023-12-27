@@ -12,7 +12,13 @@ use tracing::*;
 
 use crate::io::ZkIo;
 use crate::listeners::ListenerSet;
-use crate::proto::{to_len_prefixed_buf, AuthRequest, ByteBuf, CreateRequest, CreateResponse, DeleteRequest, EmptyRequest, EmptyResponse, ExistsRequest, ExistsResponse, GetAclRequest, GetAclResponse, GetChildrenRequest, GetChildrenResponse, GetDataRequest, GetDataResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader, SetAclRequest, SetAclResponse, SetDataRequest, SetDataResponse, WriteTo, CreateTTLRequest, Create2Response};
+use crate::proto::{
+    to_len_prefixed_buf, AuthRequest, ByteBuf, Create2Response, CreateRequest, CreateResponse,
+    CreateTTLRequest, DeleteRequest, EmptyRequest, EmptyResponse, ExistsRequest, ExistsResponse,
+    GetAclRequest, GetAclResponse, GetChildrenRequest, GetChildrenResponse, GetDataRequest,
+    GetDataResponse, OpCode, ReadFrom, ReplyHeader, RequestHeader, SetAclRequest, SetAclResponse,
+    SetDataRequest, SetDataResponse, WriteTo,
+};
 use crate::watch::ZkWatch;
 use crate::{
     Acl, CreateMode, Stat, Subscription, Watch, WatchType, WatchedEvent, Watcher, ZkError, ZkState,
@@ -285,6 +291,8 @@ impl ZooKeeper {
     ///
     /// If the `acl` is invalid or empty, `Err(ZkError::InvalidACL)` is returned.
     ///
+    /// If the `CreateTtl` opcode is not supported by the server, `Err(ZkError::Unimplemented)` is returned.
+    ///
     /// The maximum allowable size of the data array is 1 MiB (1,048,576 bytes). Arrays larger than
     /// this will return `Err(ZkError::BadArguments)`.
     pub async fn create_ttl(
@@ -304,11 +312,38 @@ impl ZooKeeper {
             ttl: ttl.as_millis() as i64,
         };
 
-        let response: CreateResponse = self.request(OpCode::CreateTtl, self.xid(), req, None).await?;
+        let response: CreateResponse = self
+            .request(OpCode::CreateTtl, self.xid(), req, None)
+            .await?;
 
         Ok(self.cut_chroot(response.path))
     }
 
+    /// Create a node with the given `path`. The node data will be the given `data`, and node ACL
+    /// will be the given `acl`. The `mode` argument specifies the behavior of the created node (see
+    /// `CreateMode` for more information).
+    ///
+    /// This operation, if successful, will trigger all the watches left on the node of the given
+    /// path by `exists` and `get_data` API calls, and the watches left on the parent node by
+    /// `get_children` API calls.
+    ///
+    /// # Errors
+    /// If a node with the same actual path already exists in the ZooKeeper, the result will have
+    /// `Err(ZkError::NodeExists)`. Note that since a different actual path is used for each
+    /// invocation of creating sequential node with the same path argument, the call should never
+    /// error in this manner.
+    ///
+    /// If the parent node does not exist in the ZooKeeper, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// An ephemeral node cannot have children. If the parent node of the given path is ephemeral,
+    /// `Err(ZkError::NoChildrenForEphemerals)` will be returned.
+    ///
+    /// If the `acl` is invalid or empty, `Err(ZkError::InvalidACL)` is returned.
+    ///
+    /// If the `Create2` opcode is not supported by the server, `Err(ZkError::Unimplemented)` is returned.
+    ///
+    /// The maximum allowable size of the data array is 1 MiB (1,048,576 bytes). Arrays larger than
+    /// this will return `Err(ZkError::BadArguments)`.
     pub async fn create2(
         &self,
         path: &str,
@@ -323,11 +358,38 @@ impl ZooKeeper {
             acl,
             flags: mode as i32,
         };
-        let response: Create2Response = self.request(OpCode::Create2, self.xid(), req, None).await?;
+        let response: Create2Response =
+            self.request(OpCode::Create2, self.xid(), req, None).await?;
 
         Ok((self.cut_chroot(response.path), response.stat))
     }
 
+    /// Create a node with the given `path`. The node data will be the given `data`, and node ACL
+    /// will be the given `acl`. The `mode` argument specifies the behavior of the created node (see
+    /// `CreateMode` for more information).
+    /// The `ttl` argument specifies the time to live of the created node.
+    ///
+    /// This operation, if successful, will trigger all the watches left on the node of the given
+    /// path by `exists` and `get_data` API calls, and the watches left on the parent node by
+    /// `get_children` API calls.
+    ///
+    /// # Errors
+    /// If a node with the same actual path already exists in the ZooKeeper, the result will have
+    /// `Err(ZkError::NodeExists)`. Note that since a different actual path is used for each
+    /// invocation of creating sequential node with the same path argument, the call should never
+    /// error in this manner.
+    ///
+    /// If the parent node does not exist in the ZooKeeper, `Err(ZkError::NoNode)` will be returned.
+    ///
+    /// An ephemeral node cannot have children. If the parent node of the given path is ephemeral,
+    /// `Err(ZkError::NoChildrenForEphemerals)` will be returned.
+    ///
+    /// If the `acl` is invalid or empty, `Err(ZkError::InvalidACL)` is returned.
+    ///
+    /// If the `CreateTtl` opcode is not supported by the server, `Err(ZkError::Unimplemented)` is returned.
+    ///
+    /// The maximum allowable size of the data array is 1 MiB (1,048,576 bytes). Arrays larger than
+    /// this will return `Err(ZkError::BadArguments)`.
     pub async fn create2_ttl(
         &self,
         path: &str,
@@ -345,7 +407,9 @@ impl ZooKeeper {
             ttl: ttl.as_millis() as i64,
         };
 
-        let response: Create2Response = self.request(OpCode::CreateTtl, self.xid(), req, None).await?;
+        let response: Create2Response = self
+            .request(OpCode::CreateTtl, self.xid(), req, None)
+            .await?;
 
         Ok((self.cut_chroot(response.path), response.stat))
     }
