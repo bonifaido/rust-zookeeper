@@ -10,6 +10,8 @@ object ZkTestCluster {
 
     fun run(args: Array<String>) {
 
+        System.setProperty("zookeeper.extendedTypesEnabled", "true")
+
         if (args.isEmpty()) {
             println("Cluster size must be specified")
             exitProcess(-1)
