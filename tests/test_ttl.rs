@@ -58,7 +58,6 @@ async fn zk_ttl_test() {
     assert!(exists.is_ok(), "exists failed: {:?}", exists);
     assert!(exists.unwrap().is_none(), "value should not be exist");
 
-
     cluster.kill_an_instance();
 
     // After closing the client all operations return Err
